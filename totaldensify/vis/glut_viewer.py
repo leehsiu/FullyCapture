@@ -18,7 +18,7 @@ import threading
 import time
 import glob
 from totaldensify.model.batch_adam import ADAM
-from totaldensify.model.batch_smpl import SMPL
+from totaldensify.model.batch_smpl import SmplModel as SMPL
 import copy
 import sklearn.preprocessing
 from collections import deque
@@ -71,9 +71,11 @@ class glut_viewer:
 		self.adamWrapper = ADAM(pkl_path=adamPath)
 		self.coco25_parents = [1,1,1,2,3,1,5,6,1,8,9,10,8,12,13,0,0,15,16,14,19,14,11,22,11]
 		self.mouseAction = ""
-
 		self.meshs = []
 		self.joints = []
+		self.gt_meshs = []
+		self.gt_joints = []
+
 		self.frameNum = 0
 
 	def init_GLUT(self,argv):
@@ -125,13 +127,24 @@ class glut_viewer:
 		glutSolidCylinder(dim / 10.0, l, 20, 20)
 		glPopMatrix()
 
+
+	def load_gt_data(self,mesh_v,joints):
+		#self.frameNum = mesh_v.shape[0]
+		self.gt_joints = joints
+		for i in range(self.frameNum):
+			c_f = self.adamWrapper.f
+			#c_vn = VerticesNormals(c_f,mesh_v[i])
+			c_vn = 0
+			self.gt_meshs.append({'v':mesh_v[i],'vn':c_vn,'f':c_f})
+			
 	def load_data(self,mesh_v,joints):
 		self.frameNum = mesh_v.shape[0]
 		self.joints = joints
 
 		for i in range(self.frameNum):
 			c_f = self.adamWrapper.f
-			c_vn = VerticesNormals(c_f,mesh_v[i])
+			#c_vn = VerticesNormals(c_f,mesh_v[i])
+			c_vn = 0
 			self.meshs.append({'v':mesh_v[i],'vn':c_vn,'f':c_f})
 		
 	def init_GL(self):
@@ -378,7 +391,7 @@ class glut_viewer:
 			if cid==pid:
 				continue	
 			if Jtr[cid,3]>0.1 and Jtr[pid,3]>0.1:
-				self.easyCylinder(Jtr[cid,0:3],Jtr[pid,0:3],15,[1.0,0.0,1.0,1])		
+				self.easyCylinder(Jtr[cid,0:3],Jtr[pid,0:3],15,colors)		
 	
 
 	def render_cameras(self):
@@ -445,8 +458,7 @@ class glut_viewer:
 		self.render_cameras()
 		self.renderDomeFloor()
 		cvt = self.meshs[self.frameId]['v'].astype(np.float32)
-		cf =  self.meshs[self.frameId]['f'].astype(np.int)
-		cvn =  self.meshs[self.frameId]['vn'].astype(np.float32)
+		cvt_gt = self.gt_meshs[self.frameId]['v'].astype(np.float32)
 
 		glPointSize(2.0)
 		glBegin(GL_POINTS)
@@ -457,12 +469,32 @@ class glut_viewer:
 			glVertex3f(cver[0],cver[1],cver[2])
 
 		glEnd()
+
+		glBegin(GL_POINTS)
+		#self.renderObj(cvt,cvn,cf,[0.85,0.85,0.85,1.0])
+
+		glColor3f(1.0,0.0,0.0)
+		for cver in cvt_gt:
+			glVertex3f(cver[0],cver[1],cver[2])
+
+		glEnd()
+
+
+
 		glEnable(GL_LIGHTING)
 
+		weight = np.ones((25,1))
+		weight[19:,:] = 0
 		cJtr25 = self.joints[self.frameId]
-		cJtr25 = np.hstack((cJtr25,np.ones((25,1))))
+		cJtr25 = np.hstack((cJtr25,weight))
 		#print cJtr25
 		self.renderJoints(cJtr25,[0.5,1.0,1.0,1])
+
+
+		cJtr25 = self.gt_joints[self.frameId]
+		cJtr25 = np.hstack((cJtr25,weight))
+		#print cJtr25
+		self.renderJoints(cJtr25,[1.0,0.5,1.0,1])
 
 
 		self.frameId = self.frameId+1

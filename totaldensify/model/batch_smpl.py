@@ -25,8 +25,8 @@ def undo_chumpy(x):
     return x if isinstance(x, np.ndarray) else x.r
 
 
-class SMPL(object):
-    def __init__(self, pkl_path=os.path.join(dir_path, 'neutral_smpl_with_cocoplus_reg.pkl'), joint_type='cocoplus', dtype=np.float32):
+class SmplModel(object):
+    def __init__(self, pkl_path=os.path.join(dir_path, 'neutral_smpl_with_cocoplus_reg.pkl'), reg_type='coco25', dtype=np.float32):
         """
         pkl_path is the path to a SMPL model
         """
@@ -60,15 +60,15 @@ class SMPL(object):
         self.weights = undo_chumpy(dd['weights']),
 
         # This returns 19 keypoints: 6890 x 19
-        if joint_type=='cocoplus':
-            self.joint_regressor = np.array(dd['cocoplus_regressor'].T.todense()),
+        if reg_type=='coco25':
+            self.joint_regressor = np.array(dd['J_regressor_coco25'].T.todense()),
         else:
             self.joint_regressor = self.J_regressor
         self.f = dd['f']
 
         self.nJoints = self.J_regressor.shape[1]
 
-    def __call__(self, beta, theta, get_skin=True, name=None):
+    def __call__(self, beta, theta, reg_type='coco25', name=None):
         """
         Obtain SMPL with shape (beta) & pose (theta) inputs.
         Theta includes the global rotation.
@@ -135,11 +135,9 @@ class SMPL(object):
         joint_z = np.matmul(verts[:, :, 2], self.joint_regressor)
         joints = np.stack([joint_x, joint_y, joint_z], axis=2)
 
-        if get_skin:
-            return verts, joints
-        else:
-            return joints
 
+        return verts, joints
+        
 
 if __name__ == '__main__':
     smpl = SMPL()

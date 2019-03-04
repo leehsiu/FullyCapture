@@ -104,11 +104,11 @@ def kinematric_torch(Rs,Js,parent):
     return new_J,A
 
 
-class AdamModelTorch:
+class SmplModelTorch:
     def __init__(self,pkl_path,reg_type='legacy'):
         with open(pkl_path, 'r') as f:
-            dd = pickle.load(f)   
-        self.mu_ = dd['mu']
+            dd = pickle.load(f)
+        self.mu_ = dd['v_template']
         self.n_v_ = [self.mu_.shape[0],3]
         self.n_betas_ = dd['shapedirs'].shape[-1]
         self.shapedirs_ = np.reshape(dd['shapedirs'],[-1,self.n_betas_]).T
@@ -129,6 +129,7 @@ class AdamModelTorch:
         self.J_reg_coco25_cu_ = torch.tensor(self.J_reg_coco25_,dtype=torch.float32).cuda()
         self.blendW_cu_ = torch.tensor(self.blendW_,dtype=torch.float32).cuda()
     
+
     def __call__(self,betas,theta,reg_type='legacy'):
         n_batch_ = betas.shape[0]
 
