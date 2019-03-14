@@ -22,7 +22,7 @@ def test_coco25_smpl():
     model_pkls = glob.glob(os.path.join(model_path, '*.pkl'))
     model_pkls.sort()
 
-    #model_pkls = model_pkls[:100]
+    model_pkls = model_pkls[:50]
     n_batch = len(model_pkls)
     betas = np.zeros((n_batch, 30))
     thetas = np.zeros((n_batch, 62, 3))

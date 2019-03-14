@@ -14,25 +14,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 from totaldensify.model.batch_rodrigues_torch import *
 
-def kinematric_torch(Rs,Js,parent):
-    #Rs NxJx3x3
+def kinematric_torch(n_batch_,n_J_,Rs,Js,parent):
+    #Rs Nx(J-1)x3x3
     #Js NxJx3
-    n_batch_ = Rs.shape[0]
-    n_J_ = Rs.shape[1]
-
+    #n_batch_ = Rs.shape[0]
+    #n_J_ = Rs.shape[1] + 1
     # Js NxJx3 -> NxJx3x1
     Js = torch.unsqueeze(Js,-1)
-
     outT = n_J_*[None]
-    outJ = n_J_*[None]
-
-
-    outT[0] = make_A_torch(n_batch_,Rs[:,0,:,:],Js[:,0])
+    #outJ = n_J_*[None]  pylint: unused variable
+    Rs_0 = torch.eye(3,dtype=torch.float32).cuda()
+    outT[0] = make_A_torch(n_batch_,Rs_0.repeat(n_batch_,1,1),Js[:,0])
 
     for idj in range(1,parent.shape[0]):
         ipar = parent[idj]
         j_here = Js[:,idj] - Js[:,ipar]
-        A_here = make_A_torch(n_batch_,Rs[:,idj],j_here)
+        A_here = make_A_torch(n_batch_,Rs[:,idj-1],j_here)
+
         outT[idj] = torch.matmul(outT[ipar],A_here)
 
 
@@ -47,8 +45,8 @@ def kinematric_torch(Rs,Js,parent):
     return new_J,A
 
 
-class SmplModelTorch:
-    def __init__(self,pkl_path,reg_type='total'):
+class SmplModelLBSTorch:
+    def __init__(self,pkl_path,reg_type='legacy'):
         with open(pkl_path, 'r') as f:
             dd = pickle.load(f)
         self.mu_ = dd['v_template']
@@ -60,9 +58,10 @@ class SmplModelTorch:
         self.kin_parents_ = dd['kintree_table'][0].astype(np.int32)
         self.blendW_ = dd['weights']
         
-        if reg_type=='total':
-            self.J_reg_coco25_ = dd['J_regressor_total'].T.todense()
-
+        if reg_type=='coco25':
+            self.J_reg_coco25_ = dd['J_regressor_coco25'].T.todense()
+        elif reg_type=='total':
+            self.J_reg_Total_ = dd['J_regressor_Total'].T.todense()
         self.n_J_ = self.J_reg_.shape[1]
 
         #create cuda variable
@@ -70,10 +69,12 @@ class SmplModelTorch:
         self.mu_cu_ = torch.tensor(self.mu_,dtype=torch.float32).cuda()
         self.J_reg_cu_ = torch.tensor(self.J_reg_,dtype=torch.float32).cuda()
         self.J_reg_coco25_cu_ = torch.tensor(self.J_reg_coco25_,dtype=torch.float32).cuda()
+        self.J_reg_coco25_cu_ = torch.tensor(self.J_reg_coco25_,dtype=torch.float32).cuda()
+        
         self.blendW_cu_ = torch.tensor(self.blendW_,dtype=torch.float32).cuda()
     
 
-    def __call__(self,betas,theta,reg_type='total'):
+    def __call__(self,betas,theta,reg_type='legacy'):
         n_batch_ = betas.shape[0]
 
         #(N x 10) x (10 x V*3) = N x V*3
@@ -92,14 +93,14 @@ class SmplModelTorch:
         # J as (NxJx3)
         J = torch.stack([Jx,Jy,Jz],dim=2)
 
-        # theta (NxJx3) -> (N*Jx3)
+        # theta (Nx(J-1)x3) -> (N*(J-1)x3)
         theta_vec = theta.view(-1,3)
         quat, Rs = batch_rodrigues_torch(theta_vec,transpose_r=False)
-        # Rs (N*Jx3x3) -> (NxJx3x3)
+        # Rs (N*(J-1)x3x3) -> (Nx(J-1)x3x3)
 
-        Rs_batch = Rs.view(-1,self.n_J_,3,3)
+        Rs_batch = Rs.view(-1,self.n_J_-1,3,3)
 
-        J_new_, A = kinematric_torch(Rs_batch,J,self.kin_parents_)
+        J_new_, A = kinematric_torch(n_batch_,self.n_J_,Rs_batch,J,self.kin_parents_)
 
         #Skining
         W_tile_ = self.blendW_cu_.repeat(n_batch_,1)
@@ -116,7 +117,7 @@ class SmplModelTorch:
             J_x_ = torch.matmul(verts[:,:,0],self.J_reg_cu_)
             J_y_ = torch.matmul(verts[:,:,1],self.J_reg_cu_)
             J_z_ = torch.matmul(verts[:,:,2],self.J_reg_cu_)
-        elif reg_type=='total':
+        elif reg_type=='coco25':
             J_x_ = torch.matmul(verts[:,:,0],self.J_reg_coco25_cu_)
             J_y_ = torch.matmul(verts[:,:,1],self.J_reg_coco25_cu_)
             J_z_ = torch.matmul(verts[:,:,2],self.J_reg_coco25_cu_)

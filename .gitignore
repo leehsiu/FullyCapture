@@ -1,3 +1,9 @@
+build/
+.vscode/
 models/
 TotalDensify.egg-info/
 *.pyc
+*.pkl
+*.txt
+*.png
+*.gif

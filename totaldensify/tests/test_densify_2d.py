@@ -7,11 +7,14 @@ import time
 from totaldensify.model.batch_smpl_torch import SmplModelTorch
 from totaldensify.model.batch_smpl import SmplModel
 #from totaldensify.vis.glut_viewer import glut_viewer
+import totaldensify.optimizer.bodyprior as prior_utils
 import cPickle as pickle
 import totaldensify.data.dataIO as dataIO
 import matplotlib.pyplot as plt
 import totaldensify.vis.plot_vis as plot_vis
 import neural_renderer as nr
+
+from totaldensify.vis.glut_viewer import glut_viewer
 c_map = plt.get_cmap('hsv')
 fig, ax = plt.subplots()
 def projection(vt,K,R,t,imsize):
@@ -44,70 +47,76 @@ def projection(vt,K,R,t,imsize):
 
     return vt
 
-def densify2d_adam(totalModel,j2d_t,inds_t,face,tex,render,init_param,n_iter,reg_type):
+def densify2d_adam(totalModel,j2d_t,j2d_w,v2d_t,v2d_w,init_param,n_iter,reg_type):
+
 
     n_batch = j2d_t.shape[0]
+    thetas_delta_cu = torch.zeros(n_batch,24,3,requires_grad=True,device='cuda',dtype=torch.float32).cuda()
 
-    betas_cu = torch.tensor(
-        init_param['betas'],requires_grad=True, device='cuda').cuda()
-    thetas_cu = torch.tensor(
-        init_param['theta'],requires_grad=True, device='cuda').cuda()
+    betas_cu_one = torch.tensor(
+        init_param['betas'][0][None,:],requires_grad=True, device='cuda').cuda()
     trans_cu = torch.tensor(
         init_param['trans'],requires_grad=True, device = 'cuda').cuda()
+    thetas_base_cu = torch.tensor(
+        init_param['theta'],device='cuda').cuda()
+
+    betas_cu = betas_cu_one.repeat(n_batch,1)
+
     cam_K_cu = torch.tensor(init_param['K'],dtype=torch.float32).cuda()
     cam_R_cu = torch.tensor(init_param['R'],dtype=torch.float32).cuda()
     cam_t_cu = torch.tensor(init_param['t'],dtype=torch.float32).cuda()
-    weights = torch.tensor(init_param['weight'],dtype=torch.float32).cuda()
+    j2d_w = torch.tensor(j2d_w,dtype=torch.float32).cuda()
+    v2d_w = torch.tensor(v2d_w,dtype=torch.float32).cuda()
 
     img_size = init_param['img_size']
 
 
-    thetas_cu_zeros = torch.zeros_like(thetas_cu).cuda()
+    thetas_cu = thetas_base_cu + thetas_delta_cu
+    thetas_cu_zeros = torch.zeros_like(thetas_delta_cu).cuda()
     betas_cu_zeros = torch.zeros_like(betas_cu).cuda()
 
     #weight_cu = self.weight_coco25_cu.repeat(n_batch, 1, 1)
 
     j2d_t = torch.tensor(j2d_t,dtype=torch.float32).cuda() 
-
-
-    optimizer = torch.optim.Adam([{'params':betas_cu},
-                                    {'params':thetas_cu},
-                                    {'params':trans_cu}], lr=0.1)
-    l2loss = torch.nn.MSELoss().cuda()
-    #bceloss = torch.nn.BCELoss().cuda()
+    v2d_t = torch.tensor(v2d_t,dtype=torch.float32).cuda()
     
+    optimizer = torch.optim.Adam([{'params':betas_cu_one,'lr':1e-1},
+                                    {'params':thetas_delta_cu},
+                                    {'params':trans_cu}], lr=1e-1)
+    l2loss = torch.nn.MSELoss(reduction='sum').cuda()
+    #bceloss = torch.nn.BCELoss().cuda()
+    dct_criterion = prior_utils.LinearDCT(100,'dct','ortho').cuda()
 
-
+    weight_coeff = torch.zeros(6890*3,100,dtype=torch.float32).cuda()
+    weight_coeff[:,80:] = 1
+    coeff_cu_zeros = torch.zeros_like(weight_coeff,dtype=torch.float32).cuda()
+        
     for i in range(n_iter):
+        betas_cu = betas_cu_one.repeat(n_batch,1)
+        thetas_cu = thetas_delta_cu+thetas_base_cu 
         v3d_pred, j3d_pred = totalModel(betas_cu, thetas_cu, reg_type)
         j3d_pred = j3d_pred /100.0 + trans_cu
         v3d_pred = v3d_pred /100.0 + trans_cu
+        v3d_pred_vec = v3d_pred.view(-1,6890*3).transpose(1,0)
+        dct_coef = dct_criterion(v3d_pred_vec)
+
+
+
         #j3d_pred = j3d_pred / 100.0
-        v3d_to_render = v3d_pred.view(1,-1,3)
-        #print(v3d_to_render.dtype)
-
         #images = rendered(vts_float,model_faces_cu,tex,None,K_cu,R_cu,t_cu,None,img_size)
-
-        
         j2d_pred = projection(j3d_pred,cam_K_cu,cam_R_cu,cam_t_cu,img_size)[:,:,:2]
-        j2d_loss = l2loss(j2d_pred*weights, j2d_t*weights)
-        
-    
-        loss_norm = l2loss(thetas_cu,thetas_cu_zeros)
-    
+        v2d_pred = projection(v3d_pred,cam_K_cu,cam_R_cu,cam_t_cu,img_size)[:,:,:2]
+
+        j2d_loss = l2loss(j2d_pred*j2d_w, j2d_t*j2d_w)
+        v2d_loss = l2loss(v2d_pred*v2d_w, v2d_t*v2d_w)
+
+        loss_norm = l2loss(thetas_delta_cu,thetas_cu_zeros)
         loss_beta = l2loss(betas_cu,betas_cu_zeros)
-        if i==80:
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = 0.1
-        if i<=80:
-            loss_total = j2d_loss + 0.001*loss_norm + 1*loss_beta
-        else:
-            rendered_img = render(v3d_to_render,face,tex,None,cam_K_cu,cam_R_cu,cam_t_cu,None,img_size)
-            #dense_error = (rendered_img - inds_t)**2
-            #log_prob = torch.exp(dense_error)
-            dense_loss = l2loss(rendered_img,inds_t)
-            #dense_loss = torch.sum(log_prob)
-            loss_total = j2d_loss + 0.001*loss_norm + loss_beta + dense_loss*1e-4
+        loss_dct =  l2loss(dct_coef*weight_coeff,coeff_cu_zeros)
+
+
+        #loss_total = j2d_loss + 0.1*loss_norm + loss_beta + v2d_loss
+        loss_total = j2d_loss + 1e-4*v2d_loss + 1e-3*loss_norm + 1e-3*loss_dct + loss_beta
         optimizer.zero_grad()	
         loss_total.backward()
         optimizer.step()
@@ -115,54 +124,50 @@ def densify2d_adam(totalModel,j2d_t,inds_t,face,tex,render,init_param,n_iter,reg
 
     return betas_cu.detach().cpu().numpy(),thetas_cu.detach().cpu().numpy(),trans_cu.detach().cpu().numpy()
 
-def mannual_correct(inds_img):
-    inds_dict_img = [10,7,4,9,8,6,3,11,5,2]
-    inds_dict_target = [3,2,8,5,6,1,10,4,9,7]
-
-    inds_img_c0 = inds_img[:, :, 0]
-    mask_img = np.zeros(inds_img_c0.shape, inds_img_c0.dtype)
-    for img_i,target_i in zip(inds_dict_img,inds_dict_target):
-        mask_img[inds_img_c0==img_i] = target_i
-    #re-arrange idx as 1,2,3 counting numbers
-    mask_img = np.dstack((mask_img, mask_img, mask_img))
-
-    return mask_img
-
-
-def test_load_data_multi(img_path,root_path):
+def main():
     
     smpl_path = '/home/xiul/workspace/TotalDensify/models/smplModel_with_coco25_reg.pkl'
     smplModelGPU = SmplModelTorch(pkl_path=smpl_path,reg_type='coco25')
     smplModelCPU = SmplModel(pkl_path=smpl_path,reg_type='coco25')
 
-    fit_data = dataIO.prepare_data_total(root_path,img_path)
+    root_path = '/home/xiul/databag/dslr_dance'
+    fit_data = dataIO.prepare_data_total_monocular(root_path)
     # print(fit_data)
     #ax.imshow(fit_data['img'])
     
     # plot_vis.plot_coco25_joints(fit_data['joints'],fit_data['joints_weight'],ax,'r')
     # plt.show()
-    j2d_tar = fit_data['joints']
-    weight_tar = fit_data['joints_weight']
-    for w in weight_tar:
-        w[19:] = 0
+    j2d_tar = fit_data['joints'] 
+    j2d_w = fit_data['joints_weight'][:,:,None] 
+    j2d_w[:,20:,:] =0
+    v2d_tar = fit_data['verts'][:,:,[2,1]]
 
-    weight_tar = weight_tar[:,:,None]
-    weight_tar = np.repeat(weight_tar,2,axis=2)
+    v2d_w = fit_data['verts'][:,:,0][:,:,None]
+    v2d_w[v2d_w>0] = 1
+    v2d_w[v2d_w<0] = 0
+    # weight_tar = weight_tar[:,:,None]
+    # weight_tar = np.repeat(weight_tar,2,axis=2)
+    n_frame = j2d_tar.shape[0]
+    print(j2d_tar.shape)
+    print(j2d_w.shape)
+    print(v2d_tar.shape)
+    print(v2d_w.shape)
 
-
-
-
+    
+    
     K = np.eye(3)
     R = np.eye(3)
     t = np.zeros((1,3))
-    #cam = fit_data['cam'][0]
 
-    #print(fit_data['joints'].shape
-    num_body = len(fit_data['cam'])
 
-    img_size = fit_data['img'].shape[1]
-    img_height = fit_data['img'].shape[0]
+    img_size = fit_data['img'][0].shape[1]
+    img_height = fit_data['img'][0].shape[0]
+    # u = 2 * (u - imsize/2.) / imsize
+    # v = 2 * (v - imsize/2.) / imsize
 
+    j2d_tar =2*(j2d_tar - img_size/2.0)/img_size
+    v2d_tar =2*(v2d_tar - img_size/2.0)/img_size
+    
     cam = [img_size,img_size/2,img_height/2]
     K[0,0] = cam[0]
     K[1,1] = cam[0]
@@ -174,142 +179,77 @@ def test_load_data_multi(img_path,root_path):
     t = t[None,:,:]
 
 
-    num_vertices = smplModelCPU.v_template.shape[0]
-    model_faces = smplModelCPU.f
-    for i in range(1,num_body):
-        model_faces = np.vstack((model_faces,smplModelCPU.f+i*num_vertices))
-    print(model_faces.shape)
-    
-
-    f_num = smplModelCPU.f.shape[0]
-
-    model_faces_cu = torch.tensor(model_faces[None,:,:].astype(np.int32),dtype=torch.int32).cuda()
-
-    tex_np = np.zeros((1,model_faces_cu.shape[1],2,2,2,3))
-    for i in range(num_body):
-        tex_np[0,i*f_num:(i+1)*f_num,:] = c_map(i/11.0)[:3]
-    tex = torch.tensor(tex_np,dtype=torch.float32).cuda()
-    inds_box = np.zeros((img_size,img_size,3),dtype=np.float32)
-    inds_img = mannual_correct(fit_data['inds_img'])
-    inds_cmap = np.zeros(inds_img.shape,np.float32)
-
-    for idx in range(num_body):
-        inds_cmap[inds_img[:,:,0]==(idx+1),:] = c_map(idx/11.0)[:3] 
-
-    #inds_img = np.flip(inds_img,0)
-    inds_box[:inds_img.shape[0],:,:] = inds_cmap
-    inds_box = np.flip(inds_box,0)
-
-    import cv2
-    inds_box = cv2.resize(inds_box,(256,256))
-
-    inds_box = inds_box.transpose(2,0,1)
-    # ax.imshow(inds_box[0,:,:])
-    # plt.show()
-
-    inds_t = torch.tensor(inds_box[None,:,:,:],dtype=torch.float32).cuda()
 
 
-    rendered = nr.Renderer(image_size=256).cuda()
-    rendered.light_intensity_directional = 0.0
-    rendered.light_intensity_ambient = 1.0
-
-
-
-    init_param = {'betas':np.array(fit_data['betas_init']).astype(np.float32),
-                'theta':np.array(fit_data['pose_init']).reshape(-1,24,3).astype(np.float32),
-                'trans':np.array(fit_data['trans_init'])[:,None,:].astype(np.float32),
+    init_param = {'betas':np.array(fit_data['betas']).astype(np.float32),
+                'theta':np.array(fit_data['pose']).reshape(-1,24,3).astype(np.float32),
+                'trans':np.array(fit_data['trans'])[:,None,:].astype(np.float32),
                 'K':K,
                 'R':R,
                 't':t,
-                'img_size':img_size,
-                'weight':weight_tar}
-
-    #j2d_tar[:,:,0] = 2 * (j2d_tar[:,:,0] - img_size/2.) / img_size
-    j2d_tar = 2 * (j2d_tar - img_size/2.) / img_size
-    #print(np.array(fit_data['trans_init']).shape)
-    fit = True
+                'img_size':img_size}
 
 
-    if not fit:
-        betas_init_cu = torch.tensor(init_param['betas']).cuda()
-        pose_init_cu = torch.tensor(init_param['theta']).cuda()
-        trans_init_cu = torch.tensor(init_param['trans']).cuda()
-    else:
-        betas,thetas,trans = densify2d_adam(smplModelGPU,j2d_tar,inds_t,model_faces_cu,tex,rendered,init_param,120,'coco25')
-        betas_init_cu = torch.tensor(betas).cuda()
-        pose_init_cu = torch.tensor(thetas).cuda()
-        trans_init_cu = torch.tensor(trans).cuda()
+    t0 = time.time()
+    betas,thetas,trans = densify2d_adam(smplModelGPU,j2d_tar,j2d_w,v2d_tar,v2d_w,init_param,100,'coco25')
+    t1 = time.time()
 
 
-    vts,jts = smplModelGPU(betas_init_cu,pose_init_cu,reg_type='coco25')
-    vts = vts/100.0
-    jts = jts/100.0
-    vts += trans_init_cu
-    jts += trans_init_cu
+    print('time passed for 100 frame {}'.format(t1-t0))
 
-    #def projection(vt,K,R,t,imsize):
-    proj_2d = projection(jts,torch.tensor(K,dtype=torch.float32).cuda(),torch.tensor(R,dtype=torch.float32).cuda(),torch.tensor(t,dtype=torch.float32).cuda(),img_size)
-    proj_2d_cpu = proj_2d.detach().cpu().numpy()*img_size/2 + img_size/2
+    betas_cu_n = torch.tensor(betas).cuda()
+    thetas_cu_n = torch.tensor(thetas).cuda()
+    trans_cu_n = torch.tensor(trans).cuda()
 
-    ax.imshow(fit_data['img'])
+    v3d_n, j3d_n = smplModelGPU(betas_cu_n, thetas_cu_n, reg_type='coco25')
+    #v3d_n = v3d_n/100.0 + trans_cu_n
+    #j3d_n = j3d_n/100.0 + trans_cu_n
+    #v3d_n = v3d_n/100.0 + trans_cu_n
+    #j3d_n = j3d_n/100.0 + trans_cu_n    
+    v3d_n = v3d_n/100.0 + trans_cu_n
+    j3d_n = j3d_n/100.0 + trans_cu_n
 
-    # 	#j2d_tar
-
+    v2d_proj = projection(v3d_n,torch.tensor(K,dtype=torch.float32).cuda(),torch.tensor(R,dtype=torch.float32).cuda(),torch.tensor(t,dtype=torch.float32).cuda(),img_size)
+    j2d_proj = projection(j3d_n,torch.tensor(K,dtype=torch.float32).cuda(),torch.tensor(R,dtype=torch.float32).cuda(),torch.tensor(t,dtype=torch.float32).cuda(),img_size)
     
-    #model_faces = smplModelCPU.f[None,:,:]
-
-    K_cu = torch.tensor(K,dtype=torch.float32).cuda()
-    R_cu = torch.tensor(R,dtype=torch.float32).cuda()
-    t_cu = torch.tensor(t,dtype=torch.float32).cuda()
-    vts_float = vts.view(-1,3)
-    vts_float = vts_float.type(torch.float32)[None,:,:]
-
-    images = rendered(vts_float,model_faces_cu,tex,None,K_cu,R_cu,t_cu,None,img_size)
-    #image_cpu = images.detach().cpu().numpy()[0]
-
-    image_cpu = images.detach().cpu().numpy()[0].transpose((1,2,0))
-    image_cpu = np.flip(image_cpu,0)
-    image_cpu = cv2.resize(image_cpu,(img_size,img_size))
-
-    image_cpu = image_cpu[:img_height,:,:]
-    alpha_cpu = np.ones((image_cpu.shape[0],image_cpu.shape[1]))
-    sum_color = np.sum(image_cpu,axis=2)
-
-    alpha_cpu[sum_color<=1e-3] = 0
-    rgba_image = np.dstack((image_cpu,alpha_cpu[:,:,None]))
-    ax.imshow(rgba_image,alpha=0.5)
-    #ax[1].imshow(image_cpu)
-    plot_w = fit_data['joints_weight'][0]
-    plot_w[19:] = 0
-    #ax.scatter(man_u,man_v,s=5)
-    for idx,proj in enumerate(proj_2d_cpu):
-        plot_w = fit_data['joints_weight'][0]
-        plot_w[19:] = 0
-        plot_vis.plot_coco25_joints(proj[:,:2],plot_w,ax,c_map(idx/11.0))
-
-    # for j2d,plot_w in zip(j2d_tar,fit_data['joints_weight']):
-    # 	plot_vis.plot_coco25_joints(j2d*img_size/2+img_size/2,plot_w,ax,'g')
-    # print(images.shape)
-    # image = images.detach().cpu().numpy()[0].transpose((1, 2, 0))  # [image_size, image_size, RGB]
-    # print(image.shape)
-    # img_uint8 = (255*image).astype(np.uint8)
-    # ax.imshow(img_uint8)
-    ax.set_xticks(())
-    ax.set_yticks(())
-    # fig,ax2 = plt.subplots(3,2)
-    # for ch in range(3):
-    #     ax2[ch][0].imshow(image_cpu[ch,:,:])
-    #     ax2[ch][1].imshow(inds_box[ch,:,:])
+    v2d_res = v2d_proj.detach().cpu().numpy()
+    j2d_res = j2d_proj.detach().cpu().numpy()
+    v2d_res = ( v2d_res * img_size)/2.0 + img_size/2
+    j2d_res = ( j2d_res * img_size)/2.0 + img_size/2
     
+    v2d_tar = ( v2d_tar * img_size)/2.0 + img_size/2
+    j2d_tar = ( j2d_tar * img_size)/2.0 + img_size/2
+     
+    #calibFile = '/home/xiul/databag/dome_sptm/171204_pose6/calibration_171204_pose6.json'
+
+    land_marks_pkl = '/home/xiul/workspace/up/models/pose/landmarks.pkl'
+    with open(land_marks_pkl) as fio:
+        lm = pickle.load(fio)
     
-    plt.show()
+    kps_ = []
+    for lk,lim in lm.iteritems():
+        kps_.append(lim)
+
+
+    print(kps_)
+
+    for i in range(n_frame):
+        ax.clear()
+        ax.set_xlim(0,1920)
+        ax.set_ylim(1080,0)
+
+        ax.imshow(fit_data['img'][i])
+        ax.scatter(v2d_res[i,kps_,0],v2d_res[i,kps_,1],s=1,c='r')
+        ax.scatter(j2d_res[i,:,0],j2d_res[i,:,1],s=3,c='r')
+        ax.scatter(v2d_tar[i,:,0],v2d_tar[i,:,1],s=0.1,c='g')
+        ax.scatter(j2d_tar[i,:,0],j2d_tar[i,:,1],s=3,c='g')
+        plt.savefig('/tmp/ots_{:04d}.png'.format(i),bbox_inches='tight')
+        plt.draw()
+        plt.pause(0.01)
     
-    
-    
-    #writer.append_data((255*image).astype(np.uint8))
+
+
+        #raw_input()
 
 if __name__=='__main__':
-    img_path = '/home/xiul/databag/denseFusion/images/run.jpg'
-    root_path = '/home/xiul/databag/denseFusion'
-    test_load_data_multi(img_path,root_path)
+    main()

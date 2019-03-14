@@ -24,7 +24,7 @@ def test_coco25_smpl():
     model_pkls.sort()
 
     #frame_id = 80
-    #model_pkls = [model_pkls[frame_id]]
+    #model_pkls = [model_pkls[65]]
 
 
     #model_pkls = model_pkls[:100]
@@ -77,7 +77,7 @@ def test_coco25_smpl():
     t0 = time.time()
 
     #Init param
-    betas_zero = np.zeros((n_batch, 10)).astype(np.float32)
+    betas_zero = np.zeros((1, 10)).astype(np.float32)
     thetas_zero = np.zeros((n_batch, 24, 3)).astype(np.float32)
     trans_zero = np.zeros((n_batch, 1, 3)).astype(np.float32)
     joint_mask = np.zeros((n_batch,25,3))

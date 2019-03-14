@@ -148,6 +148,74 @@ def batch_global_rigid_transformation(Rs, Js, parent, rotate_base=False):
     return new_J, A
 
 
+
+def batch_global_rigid_transformation_no_root(Rs, Js, parent):
+    """
+    Computes absolute joint locations given pose.
+
+    rotate_base: if True, rotates the global rotation by 90 deg in x axis.
+    if False, this is the original SMPL coordinate.
+
+    Args:
+      Rs: N x 24 x 3 x 3 rotation vector of K joints
+      Js: N x 24 x 3, joint locations before posing
+      parent: 24 holding the parent id for each index
+
+    Returns
+      new_J : `Tensor`: N x 24 x 3 location of absolute joints
+      A     : `Tensor`: N x 24 4 x 4 relative joint transformations for LBS.
+    """
+    nJ = Rs.shape[1] + 1
+    N = Rs.shape[0]
+
+    # if rotate_base:
+    #     print('Flipping the SMPL coordinate frame!!!!')
+    #     rot_x = np.array(
+    #         [[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=Rs.dtype)
+    #     rot_x = np.reshape(np.tile(rot_x, [N, 1]), [N, 3, 3])
+    #     root_rotation = np.matmul(Rs[:, 0, :, :], rot_x)
+    # else:
+    #     root_rotation = Rs[:, 0, :, :]
+
+    # Now Js is N x 24 x 3 x 1
+    Rs0 = np.eye(3)[None,:,:]
+
+    root_rotation = Rs0.repeat(N,axis=0)
+    Js = np.expand_dims(Js, -1)
+
+    def make_A(R, t, name=None):
+        # Rs is N x 3 x 3, ts is N x 3 x 1
+        R_homo = np.pad(R, [[0, 0], [0, 1], [0, 0]], 'constant')
+        t_homo = np.concatenate([t, np.ones([N, 1, 1])], 1)
+        return np.concatenate([R_homo, t_homo], 2)
+
+    A0 = make_A(root_rotation, Js[:, 0])
+    results = [A0]
+    for i in range(1, parent.shape[0]):
+        j_here = Js[:, i] - Js[:, parent[i]]
+        A_here = make_A(Rs[:, i-1], j_here)
+        res_here = np.matmul(
+            results[parent[i]], A_here)
+        results.append(res_here)
+
+    # 10 x 24 x 4 x 4
+    results = np.stack(results, axis=1)
+
+    new_J = results[:, :, :3, 3]
+
+    # --- Compute relative A: Skinning is based on
+    # how much the bone moved (not the final location of the bone)
+    # but (final_bone - init_bone)
+    # ---
+    Js_w0 = np.concatenate([Js, np.zeros([N, nJ, 1, 1])], 2)
+    init_bone = np.matmul(results, Js_w0)
+    # Append empty 4 x 3:
+    init_bone = np.pad(init_bone, [[0, 0], [0, 0], [0, 0], [3, 0]], 'constant')
+    A = results - init_bone
+
+    return new_J, A
+
+
 def batch_angleaxis_to_quaternion(theta):
     # convert angle axis to quaternions in a batch
     assert len(theta.shape) == 2 and theta.shape[1] == 3

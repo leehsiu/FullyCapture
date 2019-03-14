@@ -17,40 +17,12 @@ import argparse
 import threading
 import time
 import glob
-from totaldensify.model.batch_adam import ADAM
-from totaldensify.model.batch_smpl import SmplModel as SMPL
 import copy
 import sklearn.preprocessing
 from collections import deque
 
-g_ambientLight = (0.35, 0.35, 0.35, 1.0)
-g_diffuseLight = (0.75, 0.75, 0.75, 0.7)
-g_specular = (1.0, 1.0, 1.0, 1.0)
 
-
-adamPath = '/media/posefs3b/Users/xiu/PanopticDome/models/adamModel_lbs_200.pkl'
-
-
-def VerticesNormals(f,v):
-
-	fNormal_u = v[f[:,1],:] - v[f[:,0],:]
-	fNormal_v = v[f[:,2],:] - v[f[:,0],:]
-	fNormal = np.cross(fNormal_u,fNormal_v)
-	fNormal = sklearn.preprocessing.normalize(fNormal)
-	
-	vbyf_vid = f.flatten('F')
-	vbyf_fid = np.arange(f.shape[0])
-	vbyf_fid = np.concatenate((vbyf_fid,vbyf_fid,vbyf_fid))
-	vbyf_val = np.ones(len(vbyf_vid))
-	vbyf = scipy.sparse.coo_matrix((vbyf_val,(vbyf_vid,vbyf_fid)),shape=(v.shape[0],f.shape[0])).tocsr()
-
-	vNormal = vbyf.dot(fNormal)
-
-	vNormal = sklearn.preprocessing.normalize(vNormal)
-
-	return vNormal
-
-class glut_viewer:
+class GLUTviewer:
 	def __init__(self,width,height):
 		self.viewDist = 50
 		self.width = width
@@ -68,23 +40,28 @@ class glut_viewer:
 		self.viewMode = 'free'
 		self.frameId = 0
 		self.camId = deque('00',maxlen=2)
-		self.adamWrapper = ADAM(pkl_path=adamPath)
 		self.coco25_parents = [1,1,1,2,3,1,5,6,1,8,9,10,8,12,13,0,0,15,16,14,19,14,11,22,11]
 		self.mouseAction = ""
-		self.meshs = []
+
+		self.meshes = [] #each frame, the mesh is combined. simply by shifting F
 		self.joints = []
-		self.gt_meshs = []
-		self.gt_joints = []
+		self.pause = False
 
 		self.frameNum = 0
+		#defautl elements all one
+		self.element = {'cameras':True,'floor':True,'mesh':True,'joints':True}
 
-	def init_GLUT(self,argv):
+	def set_element_status(self,elem_name,elem_status):
+		# if(elem_name in self.element.keys()):
+		self.element[elem_name] = elem_status
+
+	def start(self,argv):
 		glutInitDisplayMode(GLUT_RGB|GLUT_DOUBLE|GLUT_DEPTH)
 		glutInitWindowPosition(100,100)
 		glutInitWindowSize(self.width,self.height)
 		glutInit(argv)
-		glutCreateWindow("Panoptic Studio Viewer")
-		self.init_GL()
+		glutCreateWindow("GLUT viewer")
+		self.initGLContent()
 		glutReshapeFunc(self.reshapeCallback)
 		glutDisplayFunc(self.mainloop)
 		glutKeyboardFunc(self.keyboardCallback)
@@ -93,6 +70,51 @@ class glut_viewer:
 		glutSpecialFunc(self.specialkeysCallback)
 		glutIdleFunc(self.idlefuncCallback)
 		glutMainLoop()
+
+	def initGLContent(self):
+		#glClearColor(0.5, 0.5, 0.5, 0.0)
+		glClearColor(1.0, 1.0, 1.0, 0.0)
+		glEnable(GL_DEPTH_TEST)
+		glEnable(GL_BLEND)
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+		glShadeModel(GL_SMOOTH)
+		glEnable(GL_LIGHTING)
+		glEnable(GL_ALPHA_TEST)
+		glEnable(GL_TEXTURE_2D)
+		glEnable(GL_LIGHT0) 
+		glLightfv(GL_LIGHT0,GL_POSITION,[1,0,0,0])
+		glEnable(GL_LIGHT1) 
+		glLightfv(GL_LIGHT1,GL_POSITION,[0,1,0,0])
+		glEnable(GL_LIGHT2) 
+		glLightfv(GL_LIGHT2,GL_POSITION,[0,0,1,0])
+		glEnable(GL_COLOR_MATERIAL)
+		glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE)
+
+		self.colorTex = glGenTextures(1)
+		glBindTexture(GL_TEXTURE_2D, self.colorTex)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self.width,
+					self.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
+		glBindTexture(GL_TEXTURE_2D, 0)
+
+		self.fbo = glGenFramebuffers(1)
+		glBindFramebuffer(GL_FRAMEBUFFER, self.fbo)
+		glFramebufferTexture2D(
+			GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self.colorTex, 0)
+		self.depthBuffer = glGenRenderbuffers(1)
+		glBindRenderbuffer(GL_RENDERBUFFER, self.depthBuffer)
+		glRenderbufferStorage(
+			GL_RENDERBUFFER, GL_DEPTH_COMPONENT, self.width, self.height)
+		glFramebufferRenderbuffer(
+			GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, self.depthBuffer)
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0)
+	
+		self.vc_buffers = glGenBuffers(1)
+		self.vt_buffers = glGenBuffers(1)
+		self.vn_buffers = glGenBuffers(1)
+		self.f_buffers = glGenBuffers(1)
 
 	def specialkeysCallback(self,key,x,y):
 		if key == GLUT_KEY_RIGHT:
@@ -126,84 +148,26 @@ class glut_viewer:
 		glRotatef(angle, ax[0], ax[1], ax[2])
 		glutSolidCylinder(dim / 10.0, l, 20, 20)
 		glPopMatrix()
+	def easySphere(self,v1,dim,color):
+		glColor4f(color[0], color[1], color[2], color[3])
 
-
-	def load_gt_data(self,mesh_v,joints):
-		#self.frameNum = mesh_v.shape[0]
-		self.gt_joints = joints
-		for i in range(self.frameNum):
-			c_f = self.adamWrapper.f
-			#c_vn = VerticesNormals(c_f,mesh_v[i])
-			c_vn = 0
-			self.gt_meshs.append({'v':mesh_v[i],'vn':c_vn,'f':c_f})
+		glPushMatrix()
+		glTranslatef(v1[0], v1[1], v1[2])
+		
+		#print "The cylinder between %s and %s has angle %f and axis %s\n" % (v1, v2, angle, ax)
+		#glRotatef(angle, ax[0], ax[1], ax[2])
+		glutSolidSphere(dim / 10.0, 20, 20)
+		glPopMatrix()
+	
 			
 	def load_data(self,mesh_v,joints):
-		self.frameNum = mesh_v.shape[0]
+		#joints_shape F*N*25*3
+		#meshes_shape F*N*6890*3
+		self.frameNum = len(mesh_v)
 		self.joints = joints
-
-		for i in range(self.frameNum):
-			c_f = self.adamWrapper.f
-			#c_vn = VerticesNormals(c_f,mesh_v[i])
-			c_vn = 0
-			self.meshs.append({'v':mesh_v[i],'vn':c_vn,'f':c_f})
-		
-	def init_GL(self):
-		glClearColor(0.5, 0.5, 0.5, 0.0)
-		glEnable(GL_DEPTH_TEST)
-		glEnable(GL_BLEND)
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-		glShadeModel(GL_SMOOTH)
-		glEnable(GL_LIGHTING)
-
-		glEnable(GL_ALPHA_TEST)
-		glEnable(GL_TEXTURE_2D)
-		glEnable(GL_LIGHT0) 
-		glLightfv(GL_LIGHT0,GL_POSITION,[1,0,0,0])
-		glEnable(GL_LIGHT1) 
-		glLightfv(GL_LIGHT1,GL_POSITION,[0,1,0,0])
-		glEnable(GL_LIGHT2) 
-		glLightfv(GL_LIGHT2,GL_POSITION,[0,0,1,0])
-
-		glEnable(GL_COLOR_MATERIAL)
-		glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE)
-
-
-		self.colorTex = glGenTextures(1)
-		glBindTexture(GL_TEXTURE_2D, self.colorTex)
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self.width,
-					self.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
-		glBindTexture(GL_TEXTURE_2D, 0)
-
-		self.bgTex = glGenTextures(1)
-		glBindTexture(GL_TEXTURE_2D, self.bgTex)
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self.width,
-					self.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
-		glBindTexture(GL_TEXTURE_2D, 0)
-	
-		self.fbo = glGenFramebuffers(1)
-		glBindFramebuffer(GL_FRAMEBUFFER, self.fbo)
-		glFramebufferTexture2D(
-			GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, self.colorTex, 0)
-		self.depthBuffer = glGenRenderbuffers(1)
-		glBindRenderbuffer(GL_RENDERBUFFER, self.depthBuffer)
-		glRenderbufferStorage(
-			GL_RENDERBUFFER, GL_DEPTH_COMPONENT, self.width, self.height)
-		glFramebufferRenderbuffer(
-			GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, self.depthBuffer)
-
-		glBindFramebuffer(GL_FRAMEBUFFER, 0)
-
-		self.numPolygon = 0
-		self.vn_buffers = glGenBuffers(1)
-		self.v_buffers = glGenBuffers(1)
-		self.f_buffers = glGenBuffers(1)
+		self.meshes = mesh_v
 
 	def renderDomeFloor(self):
-
 		glDisable(GL_LIGHTING)
 		gridNum = 10
 		width = 50
@@ -286,14 +250,14 @@ class glut_viewer:
 			glMatrixMode(GL_MODELVIEW)
 			glLoadIdentity()
 			gluLookAt(0, 0, 0, 0, 0, 1, 0, -1, 0)
-			self.setFreeView()
+			self.set_freeview()
 		else:
 			camidlist = ''.join(self.camId)
 			camid = int(camidlist)
 			self.setCamera(camid)
+	
 	def renderPoints(self,v,colors):
 	
-
 		cvts = v.flatten()
 
 		glBindBuffer(GL_ARRAY_BUFFER, self.v_buffers)
@@ -312,52 +276,69 @@ class glut_viewer:
 				)
 		glDrawElements(GL_POINTS, 18540*3, GL_FLOAT, None)
 
-	def renderObj(self,v,vns,cinds,colors):
-	
-		self.numPolygon = cinds.shape[0]
 
-		cvts = v.flatten()
-		cvns = vns.flatten()
-		cinds = cinds.flatten()
+	def bind_buffers(self,vt,vc,vn,f):
+		num_faces = f.shape[0]
+
+		vt_c = vt.flatten().tolist()
+		vc_c = vc.flatten().tolist()
+		vn_c = vn.flatten().tolist()
+		f_c = f.flatten().astype(np.int).tolist()
+
+		
+		glBindBuffer(GL_ARRAY_BUFFER, self.vt_buffers)
+		glBufferData(GL_ARRAY_BUFFER, len(vt_c)*sizeof(ctypes.c_float),
+						(ctypes.c_float*len(vt_c))(*vt_c), GL_STATIC_DRAW)
+
+		glBindBuffer(GL_ARRAY_BUFFER, self.vc_buffers)
+		glBufferData(GL_ARRAY_BUFFER, len(vc_c)*sizeof(ctypes.c_float),
+						(ctypes.c_float*len(vc_c))(*vc_c), GL_STATIC_DRAW)
 
 		glBindBuffer(GL_ARRAY_BUFFER, self.vn_buffers)
-		glBufferData(GL_ARRAY_BUFFER, len(cvns)*sizeof(ctypes.c_float),
-						(ctypes.c_float*len(cvns))(*cvns), GL_STATIC_DRAW)
+		glBufferData(GL_ARRAY_BUFFER, len(vn_c)*sizeof(ctypes.c_float),
+						(ctypes.c_float*len(vn_c))(*vn_c), GL_STATIC_DRAW)
 
-		glBindBuffer(GL_ARRAY_BUFFER, self.v_buffers)
-		glBufferData(GL_ARRAY_BUFFER, len(cvts)*sizeof(ctypes.c_float),
-						(ctypes.c_float*len(cvts))(*cvts), GL_STATIC_DRAW)
-		cinds = cinds.astype(np.int)
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.f_buffers)
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(ctypes.c_uint) * len(cinds),
-						(ctypes.c_uint * len(cinds))(*cinds), GL_STATIC_DRAW)
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(ctypes.c_int) * len(f_c),
+						(ctypes.c_int * len(f_c))(*f_c), GL_STATIC_DRAW)
 		
+		return num_faces
 
-		glEnable (GL_BLEND)                                                                                     
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-		#glBlendFunc(GL_ONE,GL_ONE)
-		smpl_color = colors
-		ambientFskeleton = 0.9
-		diffuseFskeleton = 0.9
-		specularFskeleton = 0.9
-		smpl_shiness = 5.0
-		smpl_ambient = [ambientFskeleton * smpl_color[0], ambientFskeleton *
-					smpl_color[1], ambientFskeleton * smpl_color[2], 1.0]
-		smpl_diffuse = [diffuseFskeleton * smpl_color[0], diffuseFskeleton *
-					smpl_color[1], diffuseFskeleton * smpl_color[2], 1.0]
-		smpl_spectular = [specularFskeleton * smpl_color[0], specularFskeleton *
-					smpl_color[1], specularFskeleton * smpl_color[2], 1.0]
 
-		#glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-		glPushMatrix()
+	def render_buffers(self,num_faces,mode=GL_FILL):
+
 		glEnable(GL_CULL_FACE)
-		glEnable(GL_LIGHTING)
-		glColor4f(smpl_color[0], smpl_color[1], smpl_color[2],smpl_color[3])
-		glMaterialfv(GL_FRONT, GL_AMBIENT, smpl_ambient)
-		glMaterialfv(GL_FRONT, GL_DIFFUSE, smpl_diffuse)
-		glMaterialfv(GL_FRONT, GL_SPECULAR, smpl_spectular)
-		glMaterialf(GL_FRONT, GL_SHININESS, smpl_shiness)
+		#glEnable(GL_LIGHTING)
+
+
+		glPushMatrix()
+		# glMaterialfv(GL_FRONT, GL_AMBIENT, smpl_ambient)
+		# glMaterialfv(GL_FRONT, GL_DIFFUSE, smpl_diffuse)
+		# glMaterialfv(GL_FRONT, GL_SPECULAR, smpl_spectular)
+		# glMaterialf(GL_FRONT, GL_SHININESS, smpl_shiness)
 		glLineWidth(.5)
+
+		glEnableVertexAttribArray(0)
+		glEnableVertexAttribArray(3)
+		glBindBuffer(GL_ARRAY_BUFFER, self.vt_buffers)
+		glVertexAttribPointer(
+					0,                                # attribute
+					3,                                # size
+					GL_FLOAT,                         # type
+					GL_FALSE,                         # normalized?
+					0,  # / stride
+					None                         # array buffer offset
+				)
+		glBindBuffer(GL_ARRAY_BUFFER, self.vc_buffers)
+		glVertexAttribPointer(
+					3,                                # 1 attribute
+					3,                                # size
+					GL_FLOAT,                         # type
+					GL_FALSE,                         # normalized?
+					0,  # / stride
+					None                         # array buffer offset
+				)
+
 		glEnableVertexAttribArray(2)
 		glBindBuffer(GL_ARRAY_BUFFER, self.vn_buffers)
 		glVertexAttribPointer(
@@ -365,27 +346,21 @@ class glut_viewer:
 					3,                                # size
 					GL_FLOAT,                         # type
 					GL_TRUE,                         # normalized?
-								0,  # / stride
+					0,  # / stride
 					None                         # array buffer offset
 				)
-		glEnableVertexAttribArray(0)
-		glBindBuffer(GL_ARRAY_BUFFER, self.v_buffers)
-		glVertexAttribPointer(
-					0,                                # attribute
-					3,                                # size
-					GL_FLOAT,                         # type
-					GL_FALSE,                         # normalized?
-								0,  # / stride
-					None                         # array buffer offset
-				)
+		
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self.f_buffers)
-		#glDrawElements(GL_TRIANGLES, fnum*3, GL_UNSIGNED_INT, None)
-		glPolygonMode(GL_FRONT, GL_FILL)
-		glDrawElements(GL_TRIANGLES, self.numPolygon*3, GL_UNSIGNED_INT, None)
-		glPolygonMode(GL_FRONT, GL_FILL)
-		glPopMatrix()		
+		glPolygonMode(GL_FRONT_AND_BACK, mode)
+		glDrawElements(GL_TRIANGLES, num_faces*3, GL_UNSIGNED_INT, None)
 
-	def renderJoints(self,Jtr,colors):
+		glDisableVertexAttribArray(2)
+		glDisableVertexAttribArray(0)
+		glDisableVertexAttribArray(3)
+		glPopMatrix()
+
+
+	def render_joints(self,Jtr,colors):
 	
 		for cid,pid in enumerate(self.coco25_parents):
 			if cid==pid:
@@ -393,7 +368,6 @@ class glut_viewer:
 			if Jtr[cid,3]>0.1 and Jtr[pid,3]>0.1:
 				self.easyCylinder(Jtr[cid,0:3],Jtr[pid,0:3],15,colors)		
 	
-
 	def render_cameras(self):
 		glDisable(GL_LIGHTING)
 		sz = 10
@@ -434,8 +408,7 @@ class glut_viewer:
 			glEnd()
 			glPopMatrix()
 
-
-	def setFreeView(self):
+	def set_freeview(self):
 		glTranslatef(0,0,self.zTrans)
 		glRotatef( -self.yRot, 1.0, 0.0, 0.0)
 		glRotatef( -self.xRot, 0.0, 1.0, 0.0)
@@ -444,10 +417,10 @@ class glut_viewer:
 		glTranslatef(  0.0, self.yTrans, 0.0)
 		#print('zTrans {} xRot {} yRot {}  xTrans{}  yTrans'.format(self.zTrans,self.yRot,self.xRot,self.zRot,self.xTrans,self.yTrans))
 
-
 	def mainloop(self):
 
 		#layer0
+		#time.sleep(0.1)
 		glBindFramebuffer(GL_FRAMEBUFFER,0)
 		glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
 		glEnable (GL_LINE_SMOOTH)
@@ -455,51 +428,30 @@ class glut_viewer:
 
 
 		self.lookAt()
-		self.render_cameras()
-		self.renderDomeFloor()
-		cvt = self.meshs[self.frameId]['v'].astype(np.float32)
-		cvt_gt = self.gt_meshs[self.frameId]['v'].astype(np.float32)
+		if(self.element['cameras']):
+			self.render_cameras()
+		if(self.element['floor']):
+			self.renderDomeFloor()
+		if(self.element['mesh']):
+			vts = self.meshes[self.frameId]['vt'].astype(np.float32)
+			vcs = self.meshes[self.frameId]['vc'].astype(np.float32)
+			vns = self.meshes[self.frameId]['vn'].astype(np.float32)
+			vf = self.meshes[self.frameId]['f']
+			num_faces = self.bind_buffers(vts,vcs,vns,vf)
+			glDisable(GL_LIGHTING)
+			#glEnable(GL_LIGHTING)
+			self.render_buffers(num_faces)
+		if(self.element['joints']):
+			weight_smpl = np.ones((25,1))
+			cJtr25 = self.joints[self.frameId]
+			cJtr25 = np.hstack((cJtr25,weight_smpl))
+			self.render_joints(cJtr25,[1.0,0.0,0.0,1])
 
-		glPointSize(2.0)
-		glBegin(GL_POINTS)
-		#self.renderObj(cvt,cvn,cf,[0.85,0.85,0.85,1.0])
-
-		glColor3f(0.0,0.0,0.0)
-		for cver in cvt:
-			glVertex3f(cver[0],cver[1],cver[2])
-
-		glEnd()
-
-		glBegin(GL_POINTS)
-		#self.renderObj(cvt,cvn,cf,[0.85,0.85,0.85,1.0])
-
-		glColor3f(1.0,0.0,0.0)
-		for cver in cvt_gt:
-			glVertex3f(cver[0],cver[1],cver[2])
-
-		glEnd()
-
-
-
-		glEnable(GL_LIGHTING)
-
-		weight = np.ones((25,1))
-		weight[19:,:] = 0
-		cJtr25 = self.joints[self.frameId]
-		cJtr25 = np.hstack((cJtr25,weight))
-		#print cJtr25
-		self.renderJoints(cJtr25,[0.5,1.0,1.0,1])
-
-
-		cJtr25 = self.gt_joints[self.frameId]
-		cJtr25 = np.hstack((cJtr25,weight))
-		#print cJtr25
-		self.renderJoints(cJtr25,[1.0,0.5,1.0,1])
-
-
-		self.frameId = self.frameId+1
-		if(self.frameId==self.frameNum):
-			self.frameId = 0
+		if not self.pause:
+			#next frameId
+			self.frameId = self.frameId+1
+			if(self.frameId==self.frameNum):
+				self.frameId = 0
 		glutSwapBuffers()
 
 	def reshapeCallback(self,width, height):
@@ -509,6 +461,7 @@ class glut_viewer:
 
 	def idlefuncCallback(self):
 		glutPostRedisplay()
+
 
 	def keyboardCallback(self,key, x, y):
 		if key == chr(27) or key == "q":
@@ -525,6 +478,11 @@ class glut_viewer:
 				self.viewMode = 'camera'
 			else:
 				self.viewMode ='free'
+		elif key == 'p':
+			if self.pause:
+				self.pause = False
+			else:
+				self.pause = True
 		elif key>='0' and key<='9':
 			self.camId.popleft()
 			self.camId.append(key)
@@ -557,45 +515,3 @@ class glut_viewer:
 		glutPostRedisplay()
 
 
-def parse_args():
-
-	parser = argparse.ArgumentParser(description="")
-	parser.add_argument(
-		'--seqname',
-		dest='seqname',
-		default='161202_haggling1',
-		type=str
-	)
-	parser.add_argument(
-		'--type',
-		dest='type',
-		default='ADAM',
-		type=str
-	)
-	parser.add_argument(
-		'--skip',
-		dest='skip',
-		default = 0,
-		type = int
-	)
-	parser.add_argument(
-		'--frames',
-		dest='frames',
-		default=-1,
-		type=int
-	)
-	return parser.parse_args()
-
-	
-if __name__ == '__main__':
-
-
-	args = parse_args()
-
-	calibFile = '/home/xiul/databag/dome_sptm/171204_pose6/calibration_171204_pose6.json'
-																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																																										
-	glRender = domeViewer(1280,720)
-	glRender.loadCalibs(calibFile)
-
-	glRender.load_data()
-	glRender.init_GLUT(sys.argv)

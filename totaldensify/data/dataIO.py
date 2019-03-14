@@ -7,6 +7,8 @@ import cv2
 import copy
 import os
 import json
+import glob
+
 
 #my own version of hmr data
 def parse_hmr_data(hmr_path):
@@ -74,22 +76,6 @@ def prepare_data_total(root_path,image_path):
 	uv_img = uv_img.astype(np.float)
 	uv_img = uv_img/256.0
 
-	# bbox = get_bbox(uv_img)
-	# uv_img[uv_img[:, :, 0] < 1/256.0, :] = 1
-	# uv_img_crop = uv_img[bbox[1]:bbox[3], :, :][:, bbox[0]:bbox[2], :]
-	# img_crop = img[bbox[1]:bbox[3], :, :][:, bbox[0]:bbox[2], :]
-	#not start with crop and scale
-
-	#from bbox to new cam
-	# cam_old = hmr_data['cam']
-	# cam_new_cx = cam_old[1] - bbox[0]
-	# cam_new_cy = cam_old[2] - bbox[1]
-
-	#normalize all cam
-
-	# j2d[:, 0] = j2d[:, 0] - bbox[0]
-	# j2d[:, 1] = j2d[:, 1] - bbox[1]
-	
 
 	fit_data = {
 		'img':img,
@@ -102,10 +88,71 @@ def prepare_data_total(root_path,image_path):
 		'betas_init':hmr_data['betas'],
 		'cam':hmr_data['cam']
 	}
-	# cam = initialize_camera(cam_old[0], cam_old[0], cam_new_cx, cam_new_cy)
-	# cam_old_ch = initialize_camera(cam_old[0], cam_old[0], cam_old[1], cam_old[2])
-	#return img,img_crop, uv_img_crop[:, :, ::-1], j2d, j2d_w, hmr_data['pose'], hmr_data['trans'], hmr_data['betas'], cam, cam_old_ch
-	#return img,uv_img,j2d,j2d_w,hmr_data['pose'], hmr_data['trans'], hmr_data['betas'], cam
+
+	return fit_data
+
+def prepare_data_total_monocular(root_path):
+
+	print(root_path)
+	#image_names = glob.glob(root_path+'images')
+	image_names = ['/home/xiul/databag/dslr_dance/images/dslr_dance1_{:012d}_rendered.png'.format(i) for i in range(100)]
+	feat_names = ['/home/xiul/databag/dslr_dance/dense_feature/dslr_dance1_{:012d}_rendered.txt'.format(i) for i in range(100)]
+	#image_names = image_names.sort()
+	#print(image_names)
+	joints = []
+	joints_weight = []
+
+	#verts = []
+	imgs = []
+	hmr_cam = []
+	hmr_trans = []
+	hmr_pose = []
+	hmr_betas = []
+
+
+
+	for image_path in image_names:
+		image_base = os.path.basename(image_path)
+		image_base = os.path.splitext(image_base)[0]
+		img = cv2.imread(image_path)
+		img = img[:, :, ::-1]
+		op_path = os.path.join(root_path, 'openpose',
+						   '{}_keypoints.json'.format(image_base))
+		j2d, j2d_w = load_openpose_json(op_path,True)
+	
+		hmr_path = os.path.join(root_path, 'hmr', '{}.pkl'.format(image_base))
+		hmr_data = parse_hmr_data(hmr_path)
+		
+		imgs.append(img)
+		joints.append(j2d)
+		joints_weight.append(j2d_w)
+
+		hmr_cam.append(hmr_data['cam'][0])
+		hmr_trans.append(hmr_data['trans'][0])
+		hmr_pose.append(hmr_data['pose'][0])
+		hmr_betas.append(hmr_data['betas'][0])
+	#return {'cam': all_cam, 'trans': all_trans, 'pose': all_pose, 'betas': all_betas}
+	# img = cv2.imread(image_names[0])
+	
+	# imgs.append(img)
+	hmr_all = {'cam':hmr_cam,'trans':hmr_trans,'pose':hmr_pose,'betas':hmr_betas}
+	
+	img_width = imgs[0].shape[1]
+	img_height = imgs[0].shape[0]
+
+	hmr_all = normalize_hmr_camera(hmr_all,img_width/2,img_height/2,img_width)
+
+	verts = load_dp_vts_2d_monocular(feat_names)
+	fit_data = {
+		'img':imgs,
+		'joints':np.array(joints),
+		'joints_weight':np.array(joints_weight),
+		'verts':verts,
+		'pose':hmr_all['pose'],
+		'trans':hmr_all['trans'],
+		'betas':hmr_all['betas'],
+		'cam':hmr_all['cam']
+	}
 	return fit_data
 
 def load_openpose_json(json_file,only_one=True):
@@ -181,6 +228,24 @@ def load_dp_vts_2d(root_path,frameId,personId,model='SMPL'):
 			all_pts[view_id, :, :] = np.vstack((c_mat_err, c_mat_y, c_mat_x)).T
 	return all_pts
 
+
+def load_dp_vts_2d_monocular(file_lists,model='SMPL'):
+	n_batch = len(file_lists)
+
+	if(model=='SMPL'):
+		all_pts = np.zeros((n_batch, 6890,3),np.float32)
+	else:
+		all_pts = np.zeros((n_batch,18540,3),np.float32)
+	for idx,cfile in enumerate(file_lists):
+		#c_filePath = os.path.join(root_path, c_fileName)
+		c_mat = np.loadtxt(cfile)
+		c_mat_x = c_mat[:, 1]
+		c_mat_y = c_mat[:, 2]
+		c_mat_err = c_mat[:, 0].copy()
+		c_mat_err[c_mat[:, 0] > 5e-2] = -1
+		all_pts[idx, :, :] = np.vstack((c_mat_err, c_mat_y, c_mat_x)).T
+	return all_pts
+
 def load_dp_vts_3d(root_path,frameId,personId):
 	c_fileName = 'pcd_{:08d}_{:03d}.txt'.format(frameId, personId)
 	c_filePath = os.path.join(root_path,c_fileName)
@@ -190,6 +255,37 @@ def load_dp_vts_3d(root_path,frameId,personId):
 	vts_weight[vts_weight<0] = 0
 	vts_3d = vts_all[:,1:]
 	return vts_3d,vts_weight
+
+
+def load_dome_calibs(calib_file,view_nodes):
+	with open(calib_file) as f:
+		calibs = json.load(f)
+
+	#calibs = json.load(f)
+	cameras = calibs['cameras']
+
+	allPanel = [x['panel'] for x in cameras]
+	hdCamIndices = [i for i, x in enumerate(allPanel) if x == 0]
+	hdCams = [cameras[i] for i in hdCamIndices]
+
+	allNodes = [x['node'] for x in hdCams]
+
+	allIdx = map(lambda x: allNodes.index(x), view_nodes)
+
+	num_view = len(allIdx)
+	K_matrices = np.zeros((num_view,3,3))
+	R_matrices = np.zeros((num_view,3,3))
+	t_matrices = np.zeros((num_view,1,3))
+	for i, idx in enumerate(allIdx):
+		K = hdCams[idx]['K']
+		invR = np.array(hdCams[idx]['R'])
+		invT = np.array(hdCams[idx]['t'])
+		K_matrices[i,:,:] = np.array(K)
+		R_matrices[i,:,:] = np.array(invR)
+		t_matrices[i,:,:] = np.array(invT).T
+
+		#P_matrices[i, :, :] = np.array(K).dot(np.hstack((invR, invT)))
+	return K_matrices,R_matrices,t_matrices
 def parse_dome_calibs(calib_file,view_nodes):
 	with open(calib_file) as f:
 		calibs = json.load(f)
@@ -216,3 +312,21 @@ def parse_dome_calibs(calib_file,view_nodes):
 		P_matrices[i, :, :] = np.array(K).dot(np.hstack((invR, invT)))
 
 	return P_matrices
+
+def load_dome_images_wrt_frame(root_path,frame_id,view_ids):
+	out_images = []
+	for vid in view_ids:
+		file_name = os.path.join(root_path,'00_{:02d}_{:08d}.jpg'.format(vid,frame_id))
+		print(file_name)
+		img = cv2.imread(file_name)
+		if img is None:
+			print('got empty image named {}-{}'.format(frame_id,vid))
+		out_images.append(img)
+	return out_images
+
+
+def load_total_joints_3d(file_path):
+	with open(file_path) as fio:
+		dd = json.load(fio)
+	return dd
+	

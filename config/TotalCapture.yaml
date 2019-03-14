@@ -1,0 +1,8 @@
+CAPTURE:
+  PRIOR: '/home/xiul/workspace/TotalDensify/models/kmeans.txt'
+  BODY_WEIGHT: 1.0
+  HAND_WEIGHT: 0.8
+  SHAPE_REG: 1e3
+  POSE_REG: 1e3
+  MOTION_REG: 1e3
+  MODEL: '/home/xiul/workspace/TotalDensify/models/SMPLH_female_with_total_reg.pkl'
