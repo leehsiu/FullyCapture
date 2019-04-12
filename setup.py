@@ -6,6 +6,6 @@ from setuptools import Extension
 from setuptools import setup
 
 setup(
-    name='TotalDensify',
-    packages=['totaldensify']
+    name='fullycapture',
+    packages=['fullycapture']
 )

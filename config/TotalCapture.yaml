@@ -3,6 +3,9 @@ CAPTURE:
   BODY_WEIGHT: 1.0
   HAND_WEIGHT: 0.8
   SHAPE_REG: 1e3
-  POSE_REG: 1e3
-  MOTION_REG: 1e3
-  MODEL: '/home/xiul/workspace/TotalDensify/models/SMPLH_female_with_total_reg.pkl'
+  POSE_REG: 5e2
+  MOTION_REG: 5e2
+  MODEL_FEMALE: '/home/xiul/workspace/TotalDensify/models/SMPLH_female_with_total_reg.pkl'
+  MODEL_MALE: '/home/xiul/workspace/TotalDensify/models/SMPLH_male_with_total_reg.pkl'
+  MODEL_NEUTRAL: '/home/xiul/workspace/TotalDensify/models/SMPLH_neutral_with_total_reg.pkl'
+  
