@@ -44,7 +44,7 @@ import os
 import os.path as osp
 import yaml
 
-from totaldensify.utils.collections import AttrDict
+from fullycapture.utils.collections import AttrDict
 
 logger = logging.getLogger(__name__)
 

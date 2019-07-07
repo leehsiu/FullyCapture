@@ -1,7 +1,7 @@
 build/
 .vscode/
 models/
-TotalDensify.egg-info/
+*.egg-info/
 *.pyc
 *.pkl
 *.txt

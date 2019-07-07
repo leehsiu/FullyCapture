@@ -24,24 +24,34 @@ from collections import deque
 
 class GLUTviewer:
 	def __init__(self,width,height):
-		self.viewDist = 50
+		
+
 		self.width = width
 		self.height = height
+
+		#render options
 		self.zNear = 1.0
 		self.zFar = 2000.0
+
+		#ui_helper
+
 		self.xMousePosPrev = 0
 		self.yMousePosPrev = 0
+		
+		#main ui cam status
 		self.xTrans = 0
 		self.yTrans = 0
 		self.zTrans = 450
 		self.xRot = 60
 		self.yRot = -40
 		self.zRot = 0
+
 		self.viewMode = 'free'
 		self.frameId = 0
 		self.camId = deque('00',maxlen=2)
-		#self.coco25_parents = [1,1,1,2,3,1,5,6,1,8,9,10,8,12,13,0,0,15,16,14,19,14,11,22,11]
 
+
+		#params for joints render
 		self.coco25_parents = [1,1,1,2,3,1,5,6,1,8,9,10,8,12,13,0,0,15,16,14,19,14,11,22,11]
 		self.coco_inds = range(25)
 
@@ -53,36 +63,22 @@ class GLUTviewer:
 
 		self.mouseAction = ""
 
-		self.meshes = [] #each frame, the mesh is combined. simply by shifting F
-		self.joints = []
+		self.preload = False
 		self.pause = False
 		self.lighting = True
-		
-		self.trans = None
 		self.frameNum = 0
+
 		#defautl elements all one
-		self.element = {'cameras':True,'floor':True,'mesh':True,'joints':True,'points':True}
-
-	def set_element_status(self,elem_name,elem_status):
-		# if(elem_name in self.element.keys()):
-		self.element[elem_name] = elem_status
-
-	def start(self,argv):
-		glutInitDisplayMode(GLUT_RGB|GLUT_DOUBLE|GLUT_DEPTH)
-		glutInitWindowPosition(100,100)
-		glutInitWindowSize(self.width,self.height)
-		glutInit(argv)
-		glutCreateWindow("GLUT viewer")
-		self.initGLContent()
-		glutReshapeFunc(self.reshapeCallback)
-		glutDisplayFunc(self.mainloop)
-		glutKeyboardFunc(self.keyboardCallback)
-		glutMouseFunc(self.mouseCallback)
-		glutMotionFunc(self.motionCallback)
-		glutSpecialFunc(self.specialkeysCallback)
-		glutIdleFunc(self.idlefuncCallback)
-		glutMainLoop()
-
+		self.element = {'cameras':True,
+					    'floor':True,
+						'mesh':True,
+						'joints':True,
+						'points':True}
+		
+		self.element_func = {'mesh':None,
+							 'joints':None,
+							 'points':None}
+		
 	def initGLContent(self):
 		#glClearColor(0.5, 0.5, 0.5, 0.0)
 		glClearColor(1.0, 1.0, 1.0, 0.0)
@@ -94,11 +90,6 @@ class GLUTviewer:
 		glEnable(GL_ALPHA_TEST)
 		glEnable(GL_TEXTURE_2D)
 		glEnable(GL_LIGHT0) 
-		# glLightfv(GL_LIGHT0,GL_POSITION,[1,0,0,0])
-		# glEnable(GL_LIGHT1) 
-		# glLightfv(GL_LIGHT1,GL_POSITION,[0,1,0,0])
-		# glEnable(GL_LIGHT2) 
-		# glLightfv(GL_LIGHT2,GL_POSITION,[0,0,1,0])
 
 		glEnable(GL_COLOR_MATERIAL)
 		glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE)
@@ -129,6 +120,27 @@ class GLUTviewer:
 		self.vn_buffers = glGenBuffers(1)
 		self.f_buffers = glGenBuffers(1)
 
+	def set_element_status(self,elem_name,elem_status):
+		self.element[elem_name] = elem_status
+
+	def start(self,argv):
+		glutInitDisplayMode(GLUT_RGB|GLUT_DOUBLE|GLUT_DEPTH)
+		glutInitWindowPosition(100,100)
+		glutInitWindowSize(self.width,self.height)
+		glutInit(argv)
+		glutCreateWindow("GLUT viewer")
+		self.initGLContent()
+		glutReshapeFunc(self.reshapeCallback)
+		glutDisplayFunc(self.mainloop)
+		glutKeyboardFunc(self.keyboardCallback)
+		glutMouseFunc(self.mouseCallback)
+		glutMotionFunc(self.motionCallback)
+		glutSpecialFunc(self.specialkeysCallback)
+		glutIdleFunc(self.idlefuncCallback)
+		glutMainLoop()
+
+	
+
 	def specialkeysCallback(self,key,x,y):
 		if key == GLUT_KEY_RIGHT:
 			cFrameId = self.frameId
@@ -143,13 +155,11 @@ class GLUTviewer:
 				cFrameId = 0
 			self.frameId = cFrameId
 
+
 	def easyBnBCone(self,v1,v2,dim,color):
 		glColor4f(color[0], color[1], color[2], color[3])
-
 		v_mid  = (v2 + v1) / 2
-
 		import math
-
 		z = np.array([0.0, 0.0, 1.0])
 		# the rotation axis is the cross product between Z and v2r
 		ax0 = np.cross(z, v2 - v1)
@@ -219,18 +229,16 @@ class GLUTviewer:
 		glPushMatrix()
 		glTranslatef(v1[0], v1[1], v1[2])
 		
-		#print "The cylinder between %s and %s has angle %f and axis %s\n" % (v1, v2, angle, ax)
-		#glRotatef(angle, ax[0], ax[1], ax[2])
 		glutSolidSphere(dim / 10.0, 20, 20)
 		glPopMatrix()
 	
 			
-	def load_data(self,mesh_v,joints):
-		#joints_shape F*N*25*3
-		#meshes_shape F*N*6890*3
-		self.frameNum = len(mesh_v)
-		self.joints = joints
-		self.meshes = mesh_v
+	def set_load_func(self,element_name,load_func):
+		if element_name not in self.element_func:
+			raise ValueError('{} not in the supported elements, should be mesh,joints or points'.format(element_name))
+		self.element_func[element_name] = load_func
+	def set_frame_num(self,frame_num):
+		self.frameNum = frame_num
 
 	def renderDomeFloor(self):
 		glDisable(GL_LIGHTING)
@@ -373,16 +381,8 @@ class GLUTviewer:
 	def render_buffers(self,num_faces,mode=GL_FILL):
 
 		glEnable(GL_CULL_FACE)
-		#glEnable(GL_LIGHTING)
-
-
 		glPushMatrix()
-		# glMaterialfv(GL_FRONT, GL_AMBIENT, smpl_ambient)
-		# glMaterialfv(GL_FRONT, GL_DIFFUSE, smpl_diffuse)
-		# glMaterialfv(GL_FRONT, GL_SPECULAR, smpl_spectular)
-		# glMaterialf(GL_FRONT, GL_SHININESS, smpl_shiness)
 		glLineWidth(.5)
-
 		glEnableVertexAttribArray(0)
 		glEnableVertexAttribArray(3)
 		glBindBuffer(GL_ARRAY_BUFFER, self.vt_buffers)
@@ -496,6 +496,7 @@ class GLUTviewer:
 		glTranslatef(  0.0, self.yTrans, 0.0)
 		#print('zTrans {} xRot {} yRot {}  xTrans{}  yTrans'.format(self.zTrans,self.yRot,self.xRot,self.zRot,self.xTrans,self.yTrans))
 
+
 	def mainloop(self):
 
 		#layer0
@@ -505,43 +506,37 @@ class GLUTviewer:
 		glEnable (GL_LINE_SMOOTH)
 		glHint (GL_LINE_SMOOTH_HINT, GL_NICEST)
 
-
 		self.lookAt()
 		if(self.element['cameras']):
 			self.render_cameras()
 		if(self.element['floor']):
 			self.renderDomeFloor()
+
 		if(self.element['mesh']):
 			#glEnable(GL_LIGHTING)
 			if self.lighting:
 				glEnable(GL_LIGHTING)
 			else:
 				glDisable(GL_LIGHTING)
-			vts = self.meshes[self.frameId]['vt'].astype(np.float32)
-			vcs = self.meshes[self.frameId]['vc'].astype(np.float32)
-			vns = self.meshes[self.frameId]['vn'].astype(np.float32)
-			vf = self.meshes[self.frameId]['f']
+			if self.element_func['mesh'] is None:
+				raise NotImplementedError('load function for mesh has not been specified')
+				#not preload.
+			vts,vcs,vns,vf = self.element_func['mesh'](self.frameId)
 			num_faces = self.bind_buffers(vts,vcs,vns,vf)
-			#glDisable(GL_LIGHTING)
-			#glEnable(GL_LIGHTING)
 			self.render_buffers(num_faces)
+		
 		if(self.element['joints']):
 			glEnable(GL_LIGHTING)
-			weight_smpl = np.ones((65,1))
-			joint_total = self.joints[self.frameId]
-			joint_total = np.hstack((joint_total,weight_smpl))
-			self.render_joints(joint_total)
-
-		#tmp
-
-
-
+			if self.element_func['joints'] is None:
+				raise NotImplementedError('load function for joints has not been specified')
+			joints_total = self.element_func['joints'](self.frameId)
+			for joints in joints_total:
+				self.render_joints(joints)
 		if not self.pause:
 			#next frameId
 			self.frameId = self.frameId+1
 			if(self.frameId==self.frameNum):
 				self.frameId = 0
-		print(self.frameId)
 		glutSwapBuffers()
 
 	def reshapeCallback(self,width, height):

@@ -1,4 +1,5 @@
-import cPickle as pickle
+import six
+import pickle
 import numpy as np
 import numpy.linalg as nalg
 import copy

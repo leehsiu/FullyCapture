@@ -42,7 +42,7 @@ class TotalCLib(object):
 		self.lib.smpl_fit_total_stage1.argtypes = [ctypes.POINTER(ctypes.c_double)]*4+[ctypes.c_int]*2+[ctypes.c_bool]*2
 		self.lib.smpl_fit_total_stage1.restype = None
 
-	def smpl_fit_stage1(self,target_joints,betas,pose,trans,reg_type,gender='male',fit_shape=True,showIter=True):
+	def smpl_fit_stage1(self,target_joints,betas,pose,trans,reg_type,gender='male',fit_shape=True,show_iter=True):
 		assert(target_joints.shape==(65,4))
 		joints_c = target_joints.flatten().tolist()
 
@@ -57,15 +57,13 @@ class TotalCLib(object):
 
 		gender_c = 0 if gender=='female' else 1
 
-		#void smpl_fit_total_stage1(double* pose, double* coeff, double* trans, double* targetJoint, int reg_type, bool fit_shape, bool showiter);
-		#self.lib.dome_smpl_fit(self.pose,self.coeffs,self.trans,(ctypes.c_double*len(c_Jtr))(*c_Jtr),ctypes.c_int(reg_type),freeze_shape,showIter)
 		self.lib.smpl_fit_total_stage1(pose_c,
 							   		betas_c,
 									trans_c,
 									(ctypes.c_double*len(joints_c))(*joints_c),
 									ctypes.c_int(reg_type),
 									ctypes.c_int(gender_c),
-									fit_shape,showIter)
+									fit_shape,show_iter)
 
 		betas_np = np.frombuffer(betas_c,float).copy()
 		pose_np = np.frombuffer(pose_c,float).copy()

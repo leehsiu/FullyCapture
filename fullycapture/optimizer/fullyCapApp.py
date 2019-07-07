@@ -9,33 +9,40 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from totaldensify.model.batch_rodrigues_torch import batch_rodrigues_torch
-import totaldensify.geometry.rigid_align as align_tools
-from totaldensify.model.batch_smpl_torch import SmplModelTorch
-from totaldensify.model.batch_smpl import SmplModel
-import totaldensify.optimizer.bodyprior as prior_utils
-from totaldensify.cpp.totalclib import TotalCLib
-from totaldensify.utils.config import cfg
+from fullycapture.model.batch_rodrigues_torch import batch_rodrigues_torch
+import fullycapture.geometry.rigid_align as align_tools
+from fullycapture.model.batch_smpl_torch import SmplModelTorch
+from fullycapture.model.batch_smpl import SmplModel
+import fullycapture.optimizer.bodyprior as prior_utils
+from fullycapture.cpp.totalclib import TotalCLib
+from fullycapture.utils.config import cfg
 import cv2
-from totaldensify.vis.egl_render import EglRender
+from fullycapture.vis.egl_render import EglRender
 
-class StdCapture(object):
+class fullyCapApp(object):
     def __init__(self):
         #self.smpl_path  = smpl_path
+        
+        #mesh model_path, male, female, neutral
         self.male_path = cfg.CAPTURE.MODEL_MALE
         self.female_path = cfg.CAPTURE.MODEL_FEMALE
         self.neutral_path = cfg.CAPTURE.MODEL_NEUTRAL
+        
         self.reg_type=  'total'
     
         print('loading models and custom c++ operations')
+
+        #firstly load to Cpu, and then use .cuda() to cuda
+        self.smpl_models = {}
+        self.smpl_models['male'] = SmplModel(pkl_path=self.male_path,reg_type=self.reg_type)
+        self.smpl_models['female'] = SmplModel(pkl_path=self.female_path,reg_type=self.reg_type)
+        self.smpl_models['neutral'] = SmplModel(pkl_path=self.neutral_path,reg_type=self.reg_type)
+
         self.smplMaleCuda = SmplModelTorch(pkl_path=self.male_path,reg_type=self.reg_type)
         self.smplFemaleCuda = SmplModelTorch(pkl_path=self.female_path,reg_type=self.reg_type)
         self.smplNeutralCuda = SmplModelTorch(pkl_path=self.neutral_path,reg_type=self.reg_type)
 
-        self.smplMaleCpu = SmplModel(pkl_path=self.male_path,reg_type=self.reg_type)
-        self.smplFemaleCpu = SmplModel(pkl_path=self.female_path,reg_type=self.reg_type)
-        self.smplNeutralCpu = SmplModel(pkl_path=self.neutral_path,reg_type=self.reg_type)
-
+        
         self.cops = TotalCLib(lib_file='../../build/libtotalCops.so')
         self.cops.load_SmplModel(self.male_path,'male')
         self.cops.load_SmplModel(self.female_path,'female')
@@ -55,7 +62,7 @@ class StdCapture(object):
         self.dct_weight = np.loadtxt('../../models/dct_weight.txt')[:,None,:].repeat(3,axis=1)
         self.dct_weight = self.dct_weight.reshape(-1,100)
         print('building render')
-        self.egl_render = EglRender(1280,720)
+        #self.egl_render = EglRender(1280,720)
         self.model_dct = prior_utils.LinearDCT(100,'dct',norm='ortho').cuda()
         self.model_idct = prior_utils.LinearDCT(100,'idct',norm='ortho').cuda()
         self.l2error_eval = torch.nn.MSELoss(reduction='None').cuda()
@@ -63,7 +70,7 @@ class StdCapture(object):
         
     def build_model_prior(self):
         print('building pose prior')
-        pose_prior = np.loadtxt('../data/kmeans.txt')
+        pose_prior = np.loadtxt(cfg.CAPTURE.PRIOR)
         pose_prior = pose_prior.reshape(-1,24,3)
         pose_prior[:,0,:] = 0
         n_prior = pose_prior.shape[0]

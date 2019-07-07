@@ -11,12 +11,12 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import cPickle as pickle
+import pickle
 import os
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
 # import tensorflow as tf
-from batch_lbs import batch_rodrigues, batch_global_rigid_transformation,batch_global_rigid_transformation_no_root
+from fullycapture.model.batch_lbs import batch_rodrigues, batch_global_rigid_transformation,batch_global_rigid_transformation_no_root
 
 
 # There are chumpy variables so convert them to numpy.
@@ -29,8 +29,8 @@ class SmplModelLBS(object):
         pkl_path is the path to a SMPL model
         """
         # -- Load SMPL params --
-        with open(pkl_path, 'r') as f:
-            dd = pickle.load(f)
+        with open(pkl_path, 'rb') as f:
+            dd = pickle.load(f,encoding='latin1')
         # Mean template verticesq
         self.v_template = undo_chumpy(dd['v_template'])
         # Size of mesh [Number of vertices, 3]

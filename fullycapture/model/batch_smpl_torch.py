@@ -12,7 +12,7 @@ import cPickle as pickle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from totaldensify.model.batch_rodrigues_torch import *
+from fullycapture.model.batch_rodrigues_torch import *
 
 def kinematric_torch(Rs,Js,parent):
     #Rs NxJx3x3

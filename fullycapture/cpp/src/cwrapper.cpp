@@ -233,7 +233,7 @@ extern "C" void smpl_fit_total_stage1(double* pose, double* coeff, double* trans
     else if(gender==1)
         SMPL_fit_to_total(gSmplModelMale, frame_params,gFitOptions,TotalJoints,reg_type, fit_shape, showiter);
     else
-        SMPL_fit_to_total(gSmplModelNeutral,frame_params,gFitOptions,totalJoints,reg_type,fit_shape,showiter)
+        SMPL_fit_to_total(gSmplModelNeutral,frame_params,gFitOptions,TotalJoints,reg_type,fit_shape,showiter);
 
     std::copy(frame_params.m_trans.data(), frame_params.m_trans.data() + 3, trans);
     std::copy(frame_params.m_pose.data(), frame_params.m_pose.data() + gSmplModelMale.NUM_POSE_PARAMETERS, pose);

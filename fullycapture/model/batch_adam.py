@@ -153,7 +153,7 @@ class TotalModel(object):
             return joints
 
 if __name__ == '__main__':
-    adam = ADAM()
+    adam = TotalModel()
     fileName = '/media/posefs3b/Users/donglaix/mosh_data/neutrMosh/neutrSMPL_CMU/01/01_01.pkl'
     with open(fileName, 'rb') as f:
         MoshParam = pickle.load(f)
