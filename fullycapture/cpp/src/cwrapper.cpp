@@ -17,8 +17,6 @@ SMPLModel gSmplModelMale; //the global smplmodel for the cwrapper module
 SMPLModel gSmplModelFemale;
 SMPLModel gSmplModelNeutral;
 
-
-
 extern "C" void load_SMPLModelMale(int* face_, double* J_reg_val, int* J_reg_indices, int J_reg_nnz, int* kintree_, double* U_, double* mu_, double* J_mu_, double* W_, double* total_reg_val, int* total_reg_ind, int total_reg_nnz);
 extern "C" void load_SMPLModelFemale(int* face_, double* J_reg_val, int* J_reg_indices, int J_reg_nnz, int* kintree_, double* U_, double* mu_, double* J_mu_, double* W_, double* total_reg_val, int* total_reg_ind, int total_reg_nnz);
 extern "C" void load_SMPLModelNeutral(int* face_, double* J_reg_val, int* J_reg_indices, int J_reg_nnz, int* kintree_, double* U_, double* mu_, double* J_mu_, double* W_, double* total_reg_val, int* total_reg_ind, int total_reg_nnz);

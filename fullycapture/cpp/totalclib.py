@@ -35,6 +35,20 @@ class TotalCLib(object):
 											ctypes.c_int] 
 		self.lib.load_SMPLModelFemale.restype = None
 
+		self.lib.load_SMPLModelNeutral.argtypes = [ctypes.POINTER(ctypes.c_int), #f
+											ctypes.POINTER(ctypes.c_double), #J_reg
+											ctypes.POINTER(ctypes.c_int),
+											ctypes.c_int,
+											ctypes.POINTER(ctypes.c_int), #kintree
+											ctypes.POINTER(ctypes.c_double), #U_
+											ctypes.POINTER(ctypes.c_double), #mu_
+											ctypes.POINTER(ctypes.c_double), #J_mu
+											ctypes.POINTER(ctypes.c_double), #LBS_w
+											ctypes.POINTER(ctypes.c_double), #coco_reg
+											ctypes.POINTER(ctypes.c_int),
+											ctypes.c_int] 
+		self.lib.load_SMPLModelNeutral.restype = None
+
 
 		self.lib.setup_fit_options.argtypes = [ctypes.c_double]*5
 		self.lib.setup_fit_options.restype = None
@@ -72,7 +86,7 @@ class TotalCLib(object):
 		return betas_np,pose_np,trans_np
 
 
-	def load_SmplModel(self,modelpath,gender):
+	def load_SMPLModel(self,modelpath,gender):
 
 		with open(modelpath) as f:
 			SMPLpkl = pickle.load(f)
@@ -95,8 +109,6 @@ class TotalCLib(object):
 
 		J_mu_ = SMPLpkl['J_regressor'].dot(SMPLpkl['v_template']).flatten().tolist()
 
-		#J_mu_ = SMPLpkl['J'].flatten().tolist()
-        
 		coco_reg_ = SMPLpkl['J_regressor_total']
 		coco_reg_coo = coco_reg_.tocoo()
 		coco_reg_val = coco_reg_coo.data.tolist()
@@ -115,8 +127,21 @@ class TotalCLib(object):
 									(ctypes.c_double*len(coco_reg_val))(*coco_reg_val),
 									(ctypes.c_int*len(coco_reg_ind))(*coco_reg_ind),
 									ctypes.c_int(coco_reg_nnz))
-		else:
+		elif gender=='female':
 			self.lib.load_SMPLModelFemale((ctypes.c_int*len(faces_))(*faces_),
+						(ctypes.c_double*len(J_reg_val))(*J_reg_val),
+						(ctypes.c_int*len(J_reg_ind))(*J_reg_ind),
+						ctypes.c_int(J_reg_nnz),
+						(ctypes.c_int*len(kintree_table_))(*kintree_table_),
+						(ctypes.c_double*len(U_))(*U_),
+						(ctypes.c_double*len(mu_))(*mu_),
+						(ctypes.c_double*len(J_mu_))(*J_mu_),
+						(ctypes.c_double*len(W_))(*W_),
+						(ctypes.c_double*len(coco_reg_val))(*coco_reg_val),
+						(ctypes.c_int*len(coco_reg_ind))(*coco_reg_ind),
+						ctypes.c_int(coco_reg_nnz))
+		else:
+			self.lib.load_SMPLModelNeutral((ctypes.c_int*len(faces_))(*faces_),
 						(ctypes.c_double*len(J_reg_val))(*J_reg_val),
 						(ctypes.c_int*len(J_reg_ind))(*J_reg_ind),
 						ctypes.c_int(J_reg_nnz),

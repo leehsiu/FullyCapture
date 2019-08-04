@@ -1,7 +1,7 @@
 #test the rigid align method.
 import glob
 import os.path
-from fullycapture.optimizer.std_capture import StdCapture
+from fullycapture.optimizer.fullyCapApp import fullyCapApp
 import torch
 import sys
 import json
@@ -14,11 +14,14 @@ import fullycapture.data.dataIO as dataIO
 import fullycapture.utils.config as cfg_utils
 from fullycapture.utils.config import cfg
 
-if __name__=='__main__':
 
+#Search.
+#Instead of global align, use EDM for direct search.
+
+def main():
     cfg_utils.merge_cfg_from_file('../../config/TotalCapture.yaml')
     cfg_utils.assert_and_infer_cfg()
-    capUtils = StdCapture()
+    capUtils = fullyCapApp()
     capUtils.build_model_prior()
     seqname = '171204_pose6'
 
@@ -46,3 +49,8 @@ if __name__=='__main__':
         with open(out_path,'wb') as fio:
             pickle.dump({'ids':ids_total,'beta':betas,'theta':theta,'trans':trans},fio)
         print('[{}/{}]'.format(idx+1,all_files_len))
+
+
+
+if __name__=='__main__':
+    export_prior_joints()

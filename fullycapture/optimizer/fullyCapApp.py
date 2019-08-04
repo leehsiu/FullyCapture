@@ -32,16 +32,17 @@ class fullyCapApp(object):
     
         print('loading models and custom c++ operations')
 
-        #firstly load to Cpu, and then use .cuda() to cuda
-        self.smpl_models = {}
-        self.smpl_models['male'] = SmplModel(pkl_path=self.male_path,reg_type=self.reg_type)
-        self.smpl_models['female'] = SmplModel(pkl_path=self.female_path,reg_type=self.reg_type)
-        self.smpl_models['neutral'] = SmplModel(pkl_path=self.neutral_path,reg_type=self.reg_type)
+        #numpy and torch
+        self.smpl_model = {}
+        self.smpl_model['male'] = SmplModel(pkl_path=self.male_path,reg_type=self.reg_type)
+        self.smpl_model['female'] = SmplModel(pkl_path=self.female_path,reg_type=self.reg_type)
+        self.smpl_model['neutral'] = SmplModel(pkl_path=self.neutral_path,reg_type=self.reg_type)
 
-        self.smplMaleCuda = SmplModelTorch(pkl_path=self.male_path,reg_type=self.reg_type)
-        self.smplFemaleCuda = SmplModelTorch(pkl_path=self.female_path,reg_type=self.reg_type)
-        self.smplNeutralCuda = SmplModelTorch(pkl_path=self.neutral_path,reg_type=self.reg_type)
-
+        self.smpl_model_torch = {}
+        self.smpl_model_torch['male'] = SmplModelTorch(pkl_path=self.male_path,reg_type=self.reg_type)
+        self.smpl_model_torch['female'] = SmplModelTorch(pkl_path=self.female_path,reg_type=self.reg_type)
+        self.smpl_model_torch['neutral'] = SmplModelTorch(pkl_path=self.neutral_path,reg_type=self.reg_type)
+        
         
         self.cops = TotalCLib(lib_file='../../build/libtotalCops.so')
         self.cops.load_SmplModel(self.male_path,'male')
@@ -68,6 +69,8 @@ class fullyCapApp(object):
         self.l2error_eval = torch.nn.MSELoss(reduction='None').cuda()
         print('Finished Iniitialization')
         
+
+    
     def build_model_prior(self):
         print('building pose prior')
         pose_prior = np.loadtxt(cfg.CAPTURE.PRIOR)

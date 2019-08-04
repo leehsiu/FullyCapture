@@ -1,9 +1,10 @@
 import scipy.sparse
 import numpy as np
+import cv2
 import sklearn.preprocessing
 import torch
 
-def vertices_normals_cuda(f,vertex_by_face,v):
+def vertices_normals_torch(f,vertex_by_face,v):
     fNormal_u = v[f[:,1],:] - v[f[:,0],:]
     fNormal_v = v[f[:,2],:] - v[f[:,0],:]
     fNormal = torch.cross(fNormal_u,fNormal_v)
@@ -38,9 +39,7 @@ def vertices_normals(f,v):
 	return vNormal
 
 
-
-
-def projection_cuda(vt,K,R,t,imgw,imgh):
+def projection_torch(vt,K,R,t,imgw,imgh):
     '''
     Input
         v: NxVx3 vertices
@@ -69,3 +68,17 @@ def projection_cuda(vt,K,R,t,imgw,imgh):
     vt = torch.stack([u,v,z],dim=-1)
 
     return vt
+
+
+def undistort_verts(pts,K,distcoef):
+    valid_ind = pts[:,0]>0
+    dp_featuresf = pts[valid_ind,:-2:-1]/1.0
+    vt = dp_featuresf[:,:,np.newaxis]
+    vt = np.transpose(vt,(0,2,1))
+    undist = cv2.undistortPoints(vt,K,distcoef)
+    up = undist[:,0,:]
+    up = np.hstack((up,np.ones((dp_featuresf.shape[0],1),dtype=up.dtype)))
+    upL = np.transpose(K.dot(up.T))
+    pts[valid_ind,:-2:-1] = upL[:,0:1]
+    return pts
+

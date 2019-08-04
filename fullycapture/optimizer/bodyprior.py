@@ -250,6 +250,8 @@ class BodyPrior(object):
 #     prior = BodyPrior('/home/xiul/workspace/PanopticDome/models/gmm_08.pkl')
 
 
+
+
 if __name__ == '__main__':
     x = torch.Tensor(1000,4096)
     x.normal_(0,1)

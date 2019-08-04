@@ -14,6 +14,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from fullycapture.model.batch_rodrigues_torch import *
 
+#default use cuda.
+#TODO:
+#use nn.module, so we can use '.cuda()' and '.float()' method.
+
+
 def kinematric_torch(Rs,Js,parent):
     #Rs NxJx3x3
     #Js NxJx3
