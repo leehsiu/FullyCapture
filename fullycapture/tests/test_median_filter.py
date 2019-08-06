@@ -16,8 +16,7 @@ import numpy as np
 
 if __name__=='__main__':
 	#load data.
-
-		
+	
 	app = QtWidgets.QApplication(sys.argv)
 	m_player = PanopticStudioPlayer()
 	m_player.dataroot = '/media/internal/domedb'
