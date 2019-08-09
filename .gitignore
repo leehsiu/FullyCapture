@@ -4,6 +4,5 @@ models/
 *.egg-info/
 *.pyc
 *.pkl
-*.txt
 *.png
 *.gif
