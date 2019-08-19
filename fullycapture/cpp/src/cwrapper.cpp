@@ -4,7 +4,7 @@
 #include <Eigen/Core>
 #include <Eigen/Dense>
 #include <Eigen/SVD>
-#include <FreeImage.h>
+//#include <FreeImage.h>
 #include <GL/freeglut.h>
 #include <assert.h>
 #include <iostream>
