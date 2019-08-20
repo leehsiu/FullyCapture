@@ -1,7 +1,7 @@
 import ctypes
 from PIL import Image, ImageOps
 import numpy as np
-import cPickle as pickle
+import pickle
 import copy
 
 class TotalCLib(object):

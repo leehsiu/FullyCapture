@@ -29,14 +29,10 @@ Detectron supports a lot of different model types, each of which has a lot of
 different options. The result is a HUGE set of configuration options.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-from __future__ import unicode_literals
-
 from ast import literal_eval
 from future.utils import iteritems
 from past.builtins import basestring
+from io import IOBase
 import copy
 import logging
 import numpy as np
@@ -57,12 +53,20 @@ cfg = __C
 # Random note: avoid using '.ON' as a config key since yaml converts it to True;
 # prefer 'ENABLED' instead
 
+
 # ---------------------------------------------------------------------------- #
-# Training options
+# DATABASE SETTINGS
+# ---------------------------------------------------------------------------- #
+
+__C.DATABASE = AttrDict()
+__C.DATABASE.ROOT = '/home/xiu/databag/domedb'
+
+
+# ---------------------------------------------------------------------------- #
+# CAPTURE SETTINGS
 # ---------------------------------------------------------------------------- #
 __C.CAPTURE = AttrDict()
 
-# Initialize network with weights from this .pkl file
 __C.CAPTURE.PRIOR = b''
 
 __C.CAPTURE.BODY_WEIGHT = 1.0
@@ -183,16 +187,16 @@ def get_output_dir(datasets, training=True):
 
 def load_cfg(cfg_to_load):
     """Wrapper around yaml.load used for maintaining backward compatibility"""
-    assert isinstance(cfg_to_load, (file, basestring)), \
-        'Expected {} or {} got {}'.format(file, basestring, type(cfg_to_load))
-    if isinstance(cfg_to_load, file):
+    assert isinstance(cfg_to_load, (IOBase, basestring)), \
+        'Expected {} or {} got {}'.format(IOBase, basestring, type(cfg_to_load))
+    if isinstance(cfg_to_load, IOBase):
         cfg_to_load = ''.join(cfg_to_load.readlines())
     if isinstance(cfg_to_load, basestring):
         for old_module, new_module in iteritems(_RENAMED_MODULES):
             # yaml object encoding: !!python/object/new:<module>.<object>
             old_module, new_module = 'new:' + old_module, 'new:' + new_module
             cfg_to_load = cfg_to_load.replace(old_module, new_module)
-    return yaml.load(cfg_to_load)
+    return yaml.load(cfg_to_load,Loader=yaml.FullLoader)
 
 
 def merge_cfg_from_file(cfg_filename):

@@ -7,8 +7,7 @@ Note: To get original smpl joints, use self.J_transformed
 """
 
 import numpy as np
-import cPickle as pickle
-
+import pickle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -54,8 +53,8 @@ def kinematric_torch(Rs,Js,parent):
 
 class SmplModelTorch:
     def __init__(self,pkl_path,reg_type='total'):
-        with open(pkl_path, 'r') as f:
-            dd = pickle.load(f)
+        with open(pkl_path, 'rb') as f:
+            dd = pickle.load(f,encoding='latin1')
         self.mu_ = dd['v_template']
         self.n_v_ = [self.mu_.shape[0],3]
         self.n_betas_ = dd['shapedirs'].shape[-1]

@@ -12,7 +12,7 @@ from torch.autograd import Variable
 from fullycapture.model.batch_rodrigues_torch import batch_rodrigues_torch
 import fullycapture.geometry.rigid_align as align_tools
 from fullycapture.model.batch_smpl_torch import SmplModelTorch
-from fullycapture.model.batch_smpl import SmplModel
+from fullycapture.model.batch_smpl import batchSMPLNumpy
 import fullycapture.optimizer.bodyprior as prior_utils
 from fullycapture.cpp.totalclib import TotalCLib
 from fullycapture.utils.config import cfg
@@ -34,9 +34,9 @@ class fullyCapApp(object):
 
         #numpy and torch
         self.smpl_model = {}
-        self.smpl_model['male'] = SmplModel(pkl_path=self.male_path,reg_type=self.reg_type)
-        self.smpl_model['female'] = SmplModel(pkl_path=self.female_path,reg_type=self.reg_type)
-        self.smpl_model['neutral'] = SmplModel(pkl_path=self.neutral_path,reg_type=self.reg_type)
+        self.smpl_model['male'] = batchSMPLNumpy(pkl_path=self.male_path,reg_type=self.reg_type)
+        self.smpl_model['female'] = batchSMPLNumpy(pkl_path=self.female_path,reg_type=self.reg_type)
+        self.smpl_model['neutral'] = batchSMPLNumpy(pkl_path=self.neutral_path,reg_type=self.reg_type)
 
         self.smpl_model_torch = {}
         self.smpl_model_torch['male'] = SmplModelTorch(pkl_path=self.male_path,reg_type=self.reg_type)

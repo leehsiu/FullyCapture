@@ -6,3 +6,4 @@ models/
 *.pkl
 *.png
 *.gif
+models

@@ -29,9 +29,10 @@ class batchSMPLNumpy(object):
         pkl_path is the path to a SMPL model
         """
         # -- Load SMPL params --
-        with open(pkl_path, 'r') as f:
-            dd = pickle.load(f)
-        # Mean template verticesq
+        with open(pkl_path, 'rb') as f:
+            dd = pickle.load(f,encoding='latin1')
+        # Mean template vertices
+        
         self.v_template = undo_chumpy(dd['v_template'])
         # Size of mesh [Number of vertices, 3]
         self.size = [self.v_template.shape[0], 3]

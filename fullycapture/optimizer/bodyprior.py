@@ -6,9 +6,7 @@ import numpy as np
 import numpy.linalg as nlg
 import torch
 import torch.nn as nn
-import cPickle as pickle
-
-
+import pickle
 import numpy as np
 import torch
 import torch.nn as nn

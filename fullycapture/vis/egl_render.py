@@ -9,8 +9,7 @@ from OpenGL.EGL import *
 import numpy as np
 import numpy.linalg
 import numpy as np
-import cPickle as pickle
-import chumpy
+import pickle
 import json
 import argparse
 import time

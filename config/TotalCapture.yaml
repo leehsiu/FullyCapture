@@ -1,11 +1,12 @@
+
 CAPTURE:
-  PRIOR: '/home/xiul/workspace/FullyCapture/models/CMU_pose_kmeans_512.txt'
+  PRIOR: '/home/xiu/workspace/FullyCapture/models/CMU_pose_kmeans_512.txt'
   BODY_WEIGHT: 1.0
   HAND_WEIGHT: 0.8
   SHAPE_REG: 1e3
   POSE_REG: 5e2
   MOTION_REG: 5e2
-  MODEL_FEMALE: '/home/xiul/workspace/FullyCapture/models/SMPLH_female_with_total_reg.pkl'
-  MODEL_MALE: '/home/xiul/workspace/FullyCapture/models/SMPLH_male_with_total_reg.pkl'
-  MODEL_NEUTRAL: '/home/xiul/workspace/FullyCapture/models/SMPLH_neutral_with_total_reg.pkl'
+  MODEL_FEMALE: '/home/xiu/workspace/FullyCapture/models/SMPLH_female_with_total_reg.pkl'
+  MODEL_MALE: '/home/xiu/workspace/FullyCapture/models/SMPLH_male_with_total_reg.pkl'
+  MODEL_NEUTRAL: '/home/xiu/workspace/FullyCapture/models/SMPLH_neutral_with_total_reg.pkl'
   
