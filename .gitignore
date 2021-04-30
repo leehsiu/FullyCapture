@@ -6,4 +6,4 @@ models/
 *.pkl
 *.png
 *.gif
-models
+fullycapture.egg-info/PKG-INFO
